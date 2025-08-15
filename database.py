@@ -3,6 +3,7 @@ import os
 from typing import List, Optional, Tuple
 from astrbot.api import logger
 
+
 class SunosDatabase:
     """Sunos 插件数据库管理类"""
 
@@ -16,7 +17,7 @@ class SunosDatabase:
             self.db_path = os.path.join(data_dir, "sunos_plugin.db")
         else:
             self.db_path = db_path
-        
+
         self._ensure_data_dir()
         self._init_database()
 
@@ -81,7 +82,7 @@ class SunosDatabase:
 
                 cursor.execute(
                     "INSERT INTO keywords (keyword, reply) VALUES (?, ?)",
-                    (keyword, reply)
+                    (keyword, reply),
                 )
                 conn.commit()
                 return True
@@ -117,7 +118,9 @@ class SunosDatabase:
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
-                cursor.execute("SELECT reply FROM keywords WHERE keyword = ?", (message.strip(),))
+                cursor.execute(
+                    "SELECT reply FROM keywords WHERE keyword = ?", (message.strip(),)
+                )
                 result = cursor.fetchone()
                 return result[0] if result else None
         except Exception as e:
@@ -130,10 +133,13 @@ class SunosDatabase:
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
-                cursor.execute("""
+                cursor.execute(
+                    """
                     INSERT OR REPLACE INTO welcome_messages (group_id, message, updated_at)
                     VALUES (?, ?, CURRENT_TIMESTAMP)
-                """, (group_id, message))
+                """,
+                    (group_id, message),
+                )
                 conn.commit()
                 return True
         except Exception as e:
@@ -145,7 +151,9 @@ class SunosDatabase:
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
-                cursor.execute("DELETE FROM welcome_messages WHERE group_id = ?", (group_id,))
+                cursor.execute(
+                    "DELETE FROM welcome_messages WHERE group_id = ?", (group_id,)
+                )
                 conn.commit()
                 return cursor.rowcount > 0
         except Exception as e:
@@ -157,7 +165,10 @@ class SunosDatabase:
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
-                cursor.execute("SELECT message FROM welcome_messages WHERE group_id = ?", (group_id,))
+                cursor.execute(
+                    "SELECT message FROM welcome_messages WHERE group_id = ?",
+                    (group_id,),
+                )
                 result = cursor.fetchone()
                 return result[0] if result else None
         except Exception as e:
@@ -170,10 +181,13 @@ class SunosDatabase:
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
-                cursor.execute("""
+                cursor.execute(
+                    """
                     INSERT OR REPLACE INTO group_settings (group_id, enabled, updated_at)
                     VALUES (?, ?, CURRENT_TIMESTAMP)
-                """, (group_id, enabled))
+                """,
+                    (group_id, enabled),
+                )
                 conn.commit()
                 return True
         except Exception as e:
@@ -185,7 +199,9 @@ class SunosDatabase:
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
-                cursor.execute("SELECT enabled FROM group_settings WHERE group_id = ?", (group_id,))
+                cursor.execute(
+                    "SELECT enabled FROM group_settings WHERE group_id = ?", (group_id,)
+                )
                 result = cursor.fetchone()
                 return result[0] if result else True  # 默认开启
         except Exception as e:

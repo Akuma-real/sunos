@@ -147,3 +147,5 @@ Thumbs.db
 # 备份文件
 *.bak
 *.backup
+.claude
+.codebuddy
