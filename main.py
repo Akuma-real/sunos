@@ -1,3 +1,5 @@
+import time
+import threading
 from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.star import Context, Star, register
 from astrbot.api import logger
@@ -56,6 +58,8 @@ class SunosPlugin(Star):
         self._cache_timestamps = {}
         # 缓存有效期（5分钟）
         self._cache_ttl = 300
+        # 缓存锁，确保线程安全
+        self._cache_lock = threading.RLock()
         logger.info("SunOS 插件初始化完成")
 
     def _get_user_permission_level(self, event: AstrMessageEvent) -> str:
@@ -78,35 +82,59 @@ class SunosPlugin(Star):
             if not user_id:
                 return False
 
-            # 检查缓存
-            cache_key = f"{group_id}_{user_id}"
-            current_time = __import__('time').time()
-            
-            if (cache_key in self._group_admin_cache and 
-                cache_key in self._cache_timestamps and
-                current_time - self._cache_timestamps[cache_key] < self._cache_ttl):
-                return self._group_admin_cache[cache_key]
+            # 使用锁保护缓存操作，确保线程安全
+            with self._cache_lock:
+                # 检查缓存
+                cache_key = f"{group_id}_{user_id}"
+                current_time = time.time()
 
-            # 从平台元数据获取群管理员信息
-            is_admin = False
-            if hasattr(event, "platform_meta") and event.platform_meta:
-                # 尝试从群成员信息中获取管理员列表
-                group_admins = event.platform_meta.get("group_admins", [])
-                owner_id = event.platform_meta.get("owner_id")
+                if (
+                    cache_key in self._group_admin_cache
+                    and cache_key in self._cache_timestamps
+                    and current_time - self._cache_timestamps[cache_key]
+                    < self._cache_ttl
+                ):
+                    return self._group_admin_cache[cache_key]
 
-                # 检查是否为群主或管理员
-                is_admin = str(user_id) == str(owner_id) or str(user_id) in [
-                    str(admin_id) for admin_id in group_admins
-                ]
+                # 从平台元数据获取群管理员信息
+                is_admin = False
+                if hasattr(event, "platform_meta") and event.platform_meta:
+                    # 尝试从群成员信息中获取管理员列表
+                    group_admins = event.platform_meta.get("group_admins", [])
+                    owner_id = event.platform_meta.get("owner_id")
 
-            # 缓存结果
-            self._group_admin_cache[cache_key] = is_admin
-            self._cache_timestamps[cache_key] = current_time
-            return is_admin
+                    # 检查是否为群主或管理员
+                    is_admin = str(user_id) == str(owner_id) or str(user_id) in [
+                        str(admin_id) for admin_id in group_admins
+                    ]
+
+                # 缓存结果
+                self._group_admin_cache[cache_key] = is_admin
+                self._cache_timestamps[cache_key] = current_time
+
+                # 缓存清理：移除过期条目（防止内存泄漏）
+                self._cleanup_expired_cache(current_time)
+
+                return is_admin
 
         except Exception as e:
             logger.error(f"检查群管理员权限失败: {e}")
             return False
+
+    def _cleanup_expired_cache(self, current_time: float) -> None:
+        """清理过期的缓存条目（在锁保护下调用）"""
+        expired_keys = [
+            key
+            for key, timestamp in self._cache_timestamps.items()
+            if current_time - timestamp >= self._cache_ttl
+        ]
+
+        for key in expired_keys:
+            self._group_admin_cache.pop(key, None)
+            self._cache_timestamps.pop(key, None)
+
+        if expired_keys:
+            logger.debug(f"清理了 {len(expired_keys)} 个过期缓存条目")
 
     def _check_permission(
         self, event: AstrMessageEvent, required_level: str = None
@@ -143,6 +171,30 @@ class SunosPlugin(Star):
     def _validate_params(self, params: list, min_count: int) -> bool:
         """验证参数数量"""
         return len(params) >= min_count
+
+    def _validate_input_length(
+        self, text: str, max_length: int = 1000, field_name: str = "输入"
+    ) -> tuple[bool, str]:
+        """验证输入长度，防止过长内容
+
+        Args:
+            text: 要验证的文本
+            max_length: 最大长度限制
+            field_name: 字段名称，用于错误提示
+
+        Returns:
+            tuple: (是否有效, 错误消息)
+        """
+        if not text or not text.strip():
+            return False, f"{field_name}不能为空"
+
+        if len(text) > max_length:
+            return (
+                False,
+                f"{field_name}长度不能超过{max_length}个字符（当前{len(text)}个字符）",
+            )
+
+        return True, ""
 
     @filter.command("sunos")
     async def sunos_main(self, event: AstrMessageEvent):
@@ -204,12 +256,31 @@ class SunosPlugin(Star):
             reply = " ".join(message_parts[4:])
             reply = reply.replace("\\n", "\n")
 
-            if self.db.add_keyword(keyword, reply):
-                yield event.plain_result(
-                    f"成功添加词库:\n关键词: {keyword}\n回复: {reply}"
-                )
-            else:
-                yield event.plain_result(f"关键词 '{keyword}' 已存在！")
+            # 输入验证
+            keyword_valid, keyword_error = self._validate_input_length(
+                keyword, 100, "关键词"
+            )
+            if not keyword_valid:
+                yield event.plain_result(keyword_error)
+                return
+
+            reply_valid, reply_error = self._validate_input_length(
+                reply, 1000, "回复内容"
+            )
+            if not reply_valid:
+                yield event.plain_result(reply_error)
+                return
+
+            try:
+                if self.db.add_keyword(keyword, reply):
+                    yield event.plain_result(
+                        f"成功添加词库:\n关键词: {keyword}\n回复: {reply}"
+                    )
+                else:
+                    yield event.plain_result(f"关键词 '{keyword}' 已存在！")
+            except Exception as e:
+                logger.error(f"添加关键词失败: {e}")
+                yield event.plain_result("添加词库失败，请稍后重试")
 
         elif subaction == "del":
             if not self._check_admin_permission(event):
@@ -302,10 +373,22 @@ class SunosPlugin(Star):
                 yield event.plain_result(self.GROUP_ONLY_MSG)
                 return
 
-            if self.db.set_welcome_message(group_id, welcome_msg):
-                yield event.plain_result(f"成功设置欢迎语:\n{welcome_msg}")
-            else:
-                yield event.plain_result("设置欢迎语失败")
+            # 输入验证
+            msg_valid, msg_error = self._validate_input_length(
+                welcome_msg, 500, "欢迎语"
+            )
+            if not msg_valid:
+                yield event.plain_result(msg_error)
+                return
+
+            try:
+                if self.db.set_welcome_message(group_id, welcome_msg):
+                    yield event.plain_result(f"成功设置欢迎语:\n{welcome_msg}")
+                else:
+                    yield event.plain_result("设置欢迎语失败")
+            except Exception as e:
+                logger.error(f"设置欢迎语失败: {e}")
+                yield event.plain_result("设置欢迎语失败，请稍后重试")
 
         elif subaction == "del":
             if not self._check_admin_permission(event):
@@ -438,8 +521,13 @@ class SunosPlugin(Star):
     async def handle_group_events(self, event: AstrMessageEvent):
         """处理群聊事件 - 入群欢迎和退群通知"""
         try:
-            # 跳过普通消息，只处理系统通知
-            if event.message_str:  # 如果有文本消息内容，说明是普通消息
+            # 更精确的事件类型检测
+            # 跳过普通文本消息和命令消息
+            if (
+                event.message_str
+                and event.message_str.strip()
+                and not self._is_system_notification(event)
+            ):
                 return
 
             # 只处理群聊事件
@@ -503,6 +591,36 @@ class SunosPlugin(Star):
         except Exception as e:
             logger.error(f"处理群事件失败: {e}")
 
+    def _is_system_notification(self, event: AstrMessageEvent) -> bool:
+        """判断是否为系统通知消息"""
+        try:
+            # 检查是否有原始消息数据
+            if not hasattr(event, "message_obj") or not event.message_obj:
+                return False
+
+            raw_message = event.message_obj.raw_message
+
+            # 检查是否包含系统事件类型
+            if isinstance(raw_message, dict):
+                return raw_message.get("notice_type") in [
+                    "group_increase",
+                    "group_decrease",
+                    "group_admin",
+                    "group_ban",
+                ]
+            elif hasattr(raw_message, "notice_type"):
+                notice_type = getattr(raw_message, "notice_type", None)
+                return notice_type in [
+                    "group_increase",
+                    "group_decrease",
+                    "group_admin",
+                    "group_ban",
+                ]
+
+            return False
+        except Exception:
+            return False
+
     async def _handle_member_join(
         self, event: AstrMessageEvent, group_id: str, user_id: str
     ):
@@ -523,10 +641,15 @@ class SunosPlugin(Star):
             for i, part in enumerate(parts):
                 if i > 0:  # 在{user}位置添加At组件
                     chain.append(Comp.At(qq=user_id))
-                if part:  # 添加文本部分
-                    # 替换{group}占位符
+                # 替换{group}占位符并过滤空字符串
+                if part:  # 只有非空部分才添加
                     text = part.replace("{group}", group_id)
-                    chain.append(Comp.Plain(text))
+                    if text.strip():  # 过滤空白文本，避免空Plain组件
+                        chain.append(Comp.Plain(text))
+
+            # 确保消息链不为空
+            if not chain:
+                chain = [Comp.At(qq=user_id), Comp.Plain(" 欢迎加入群聊！")]
 
             yield event.chain_result(chain)
         else:
