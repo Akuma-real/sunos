@@ -1,3 +1,7 @@
+"""数据库操作层 - 专注于数据持久化
+
+提供干净的数据访问接口，不包含业务逻辑
+"""
 import sqlite3
 import os
 from typing import List, Optional, Tuple
@@ -5,15 +9,15 @@ from astrbot.api import logger
 
 
 class SunosDatabase:
-    """Sunos 插件数据库管理类"""
+    """Sunos 插件数据库管理类 - 纯数据访问层"""
 
     def __init__(self, db_path: str = None):
         # 数据存储在AstrBot全局data目录下，而非插件目录
         if db_path is None:
             # 获取AstrBot的data目录路径
             current_dir = os.path.dirname(os.path.abspath(__file__))
-            # 从 data/plugins/sunos 回到 data 目录
-            data_dir = os.path.dirname(os.path.dirname(current_dir))
+            # 从 data/plugins/sunos/core 回到 data 目录
+            data_dir = os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))
             self.db_path = os.path.join(data_dir, "sunos_plugin.db")
         else:
             self.db_path = db_path
@@ -90,7 +94,7 @@ class SunosDatabase:
         except Exception as e:
             logger.error(f"数据库初始化失败: {e}")
 
-    # 词库管理
+    # ==================== 词库管理 ====================
     def add_keyword(self, keyword: str, reply: str) -> bool:
         """添加词库"""
         try:
@@ -149,7 +153,7 @@ class SunosDatabase:
             logger.error(f"查找关键词失败: {e}")
             return None
 
-    # 欢迎语管理
+    # ==================== 欢迎语管理 ====================
     def set_welcome_message(self, group_id: str, message: str) -> bool:
         """设置欢迎语"""
         try:
@@ -197,7 +201,7 @@ class SunosDatabase:
             logger.error(f"获取欢迎语失败: {e}")
             return None
 
-    # 群聊开关管理
+    # ==================== 群聊开关管理 ====================
     def set_group_enabled(self, group_id: str, enabled: bool) -> bool:
         """设置群聊开关"""
         try:
@@ -230,21 +234,11 @@ class SunosDatabase:
             logger.error(f"检查群聊开关失败: {e}")
             return True
 
-    # 黑名单管理
+    # ==================== 黑名单管理 ====================
     def add_to_blacklist(
         self, user_id: str, added_by: str, group_id: str = None, reason: str = ""
     ) -> bool:
-        """添加用户到黑名单
-
-        Args:
-            user_id: 要添加的用户ID
-            added_by: 添加者的用户ID
-            group_id: 群组ID，None表示全局黑名单
-            reason: 添加原因
-
-        Returns:
-            bool: 是否添加成功
-        """
+        """添加用户到黑名单"""
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
@@ -262,15 +256,7 @@ class SunosDatabase:
             return False
 
     def remove_from_blacklist(self, user_id: str, group_id: str = None) -> bool:
-        """从黑名单移除用户
-
-        Args:
-            user_id: 要移除的用户ID
-            group_id: 群组ID，None表示全局黑名单
-
-        Returns:
-            bool: 是否移除成功
-        """
+        """从黑名单移除用户"""
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
@@ -291,15 +277,7 @@ class SunosDatabase:
             return False
 
     def is_in_blacklist(self, user_id: str, group_id: str = None) -> bool:
-        """检查用户是否在黑名单中
-
-        Args:
-            user_id: 用户ID
-            group_id: 群组ID，检查时会同时检查全局和群组黑名单
-
-        Returns:
-            bool: 是否在黑名单中
-        """
+        """检查用户是否在黑名单中"""
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
@@ -329,16 +307,7 @@ class SunosDatabase:
     def get_blacklist(
         self, group_id: str = None, limit: int = 50, offset: int = 0
     ) -> List[Tuple]:
-        """获取黑名单列表
-
-        Args:
-            group_id: 群组ID，None表示获取全局黑名单，'all'表示获取所有
-            limit: 限制返回数量
-            offset: 偏移量
-
-        Returns:
-            List[Tuple]: 黑名单记录列表 (id, user_id, group_id, reason, added_by, created_at)
-        """
+        """获取黑名单列表"""
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
@@ -348,8 +317,8 @@ class SunosDatabase:
                     cursor.execute(
                         """
                         SELECT id, user_id, group_id, reason, added_by, created_at
-                        FROM blacklist 
-                        ORDER BY created_at DESC 
+                        FROM blacklist
+                        ORDER BY created_at DESC
                         LIMIT ? OFFSET ?
                         """,
                         (limit, offset),
@@ -359,9 +328,9 @@ class SunosDatabase:
                     cursor.execute(
                         """
                         SELECT id, user_id, group_id, reason, added_by, created_at
-                        FROM blacklist 
+                        FROM blacklist
                         WHERE group_id IS NULL
-                        ORDER BY created_at DESC 
+                        ORDER BY created_at DESC
                         LIMIT ? OFFSET ?
                         """,
                         (limit, offset),
@@ -371,9 +340,9 @@ class SunosDatabase:
                     cursor.execute(
                         """
                         SELECT id, user_id, group_id, reason, added_by, created_at
-                        FROM blacklist 
+                        FROM blacklist
                         WHERE group_id = ?
-                        ORDER BY created_at DESC 
+                        ORDER BY created_at DESC
                         LIMIT ? OFFSET ?
                         """,
                         (group_id, limit, offset),
@@ -384,46 +353,10 @@ class SunosDatabase:
             logger.error(f"获取黑名单失败: {e}")
             return []
 
-    def get_blacklist_count(self, group_id: str = None) -> int:
-        """获取黑名单数量
-
-        Args:
-            group_id: 群组ID，None表示全局黑名单
-
-        Returns:
-            int: 黑名单数量
-        """
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
-
-                if group_id is None:
-                    cursor.execute(
-                        "SELECT COUNT(*) FROM blacklist WHERE group_id IS NULL"
-                    )
-                else:
-                    cursor.execute(
-                        "SELECT COUNT(*) FROM blacklist WHERE group_id = ?", (group_id,)
-                    )
-
-                result = cursor.fetchone()
-                return result[0] if result else 0
-        except Exception as e:
-            logger.error(f"获取黑名单数量失败: {e}")
-            return 0
-
     def get_user_blacklist_info(
         self, user_id: str, group_id: str = None
     ) -> Optional[Tuple]:
-        """获取用户的黑名单信息
-
-        Args:
-            user_id: 用户ID
-            group_id: 群组ID
-
-        Returns:
-            Optional[Tuple]: 黑名单记录信息 (id, user_id, group_id, reason, added_by, created_at)
-        """
+        """获取用户的黑名单信息"""
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
@@ -433,7 +366,7 @@ class SunosDatabase:
                     cursor.execute(
                         """
                         SELECT id, user_id, group_id, reason, added_by, created_at
-                        FROM blacklist 
+                        FROM blacklist
                         WHERE user_id = ? AND group_id = ?
                         """,
                         (user_id, group_id),
@@ -446,7 +379,7 @@ class SunosDatabase:
                 cursor.execute(
                     """
                     SELECT id, user_id, group_id, reason, added_by, created_at
-                    FROM blacklist 
+                    FROM blacklist
                     WHERE user_id = ? AND group_id IS NULL
                     """,
                     (user_id,),
