@@ -7,6 +7,7 @@
 """
 
 import sqlite3
+import re
 import os
 import shutil
 from typing import List, Tuple
@@ -257,12 +258,19 @@ class SunKeywordPlugin(Star):
                 yield event.plain_result("此操作需要管理员权限")
                 return
             
-            if len(args) < 5:
-                yield event.plain_result("用法: /sunos ck add <关键词> <回复内容>")
-                return
-            
-            keyword = args[3]
-            reply = " ".join(args[4:])
+            # 使用正则保留换行：匹配 '.sunos ck add <关键词> <回复...>' 或 '/sunos ...'
+            raw = event.message_str
+            m = re.match(r"^[\./]sunos\s+ck\s+add\s+(\S+)\s+([\s\S]+)$", raw)
+            if m:
+                keyword = m.group(1)
+                reply = m.group(2)
+            else:
+                # 回退到原有解析（不保留换行）
+                if len(args) < 5:
+                    yield event.plain_result("用法: /sunos ck add <关键词> <回复内容>")
+                    return
+                keyword = args[3]
+                reply = " ".join(args[4:])
             success, message = self._add_keyword(keyword, reply)
             yield event.plain_result(message)
 
