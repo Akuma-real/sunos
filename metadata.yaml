@@ -1,5 +1,5 @@
 name: sunkeyword # 插件的唯一识别名（与代码中注册ID一致）
 desc: SunKeyword 智能词库回复插件 - 专注关键词自动回复功能，支持数据库迁移 # 插件简短描述
-version: v3.1.0 # 插件版本号，与代码中版本一致
+version: 3.1.0 # 插件版本号，与代码中版本一致
 author: Akuma # 作者
 repo: https://github.com/Akuma-real/sunos-sunkeyword # 插件的仓库地址

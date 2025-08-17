@@ -29,8 +29,12 @@ class SunKeywordPlugin(Star):
         super().__init__(context)
         self.context = context
         
-        # 新数据库路径配置
-        data_dir = os.path.join(os.path.dirname(__file__), "..", "..", "data", "sunos")
+        # 新数据库路径配置（定位到 AstrBot 的 data 目录）
+        # 插件路径: data/plugins/<plugin>/main.py -> 上溯三级到 data/
+        self.base_data_dir = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "..", "..")
+        )
+        data_dir = os.path.join(self.base_data_dir, "sunos")
         os.makedirs(data_dir, exist_ok=True)
         self.db_path = os.path.join(data_dir, "sunos_keywords.db")
         
@@ -42,7 +46,8 @@ class SunKeywordPlugin(Star):
 
     def _migrate_database(self):
         """数据库迁移：从旧路径迁移到新路径"""
-        old_path = os.path.join(os.path.dirname(__file__), "..", "..", "data", "sunos_plugin.db")
+        # 旧库位于 data/ 根目录下
+        old_path = os.path.join(self.base_data_dir, "sunos_plugin.db")
         
         # 检查是否需要迁移
         if os.path.exists(old_path) and not os.path.exists(self.db_path):
@@ -123,7 +128,7 @@ class SunKeywordPlugin(Star):
 
     def _is_admin(self, event: AstrMessageEvent) -> bool:
         """检查是否为管理员"""
-        return event.role == "admin"
+        return event.is_admin()
 
     def _add_keyword(self, keyword: str, reply: str) -> Tuple[bool, str]:
         """添加关键词"""
@@ -304,20 +309,7 @@ class SunKeywordPlugin(Star):
         except Exception as e:
             logger.error(f"自动回复失败: {e}")
 
-    @filter.event_message_type(filter.EventMessageType.ALL, priority=1)
-    async def handle_dot_prefix(self, event: AstrMessageEvent):
-        """兼容以 .sunos 开头的指令前缀，确保 .sunos ck 可用"""
-        try:
-            msg = event.message_str.strip()
-            if not msg.startswith(".sunos"):
-                return
-            args = msg.split()
-            # 结构: .sunos ck ...
-            if len(args) >= 2 and args[0].endswith("sunos") and args[1] == "ck":
-                async for res in self._handle_keyword_commands(event, args):
-                    yield res
-        except Exception as e:
-            logger.error(f".sunos 指令兼容处理失败: {e}")
+    
 
     async def terminate(self):
         """插件卸载"""
