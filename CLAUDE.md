@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a SunOS group chat management plugin for AstrBot v2.0, providing keyword management, welcome messages, and auto-reply functionality for QQ groups. The plugin has been completely refactored using modern MVC architecture with dependency injection and now includes OneBot11 API integration for enhanced group management capabilities.
+This is a **SunKeyword intelligent keyword reply plugin** for AstrBot v2.0, providing **smart keyword auto-reply functionality**. The plugin has been completely simplified and optimized for dedicated keyword management with intelligent database migration.
 
 ## Development Commands
 
@@ -12,328 +12,226 @@ This is a SunOS group chat management plugin for AstrBot v2.0, providing keyword
 - Deploy to AstrBot plugins directory: `data/plugins/sunos/`
 - Use VSCode to edit plugin files
 - Reload plugin via AstrBot WebUI: Plugin Management → Manage → Reload Plugin
-- Database auto-creates at `data/sunos_plugin.db`
+- Database auto-creates at `data/sunos/sunos_keywords.db`
 
 **Code Formatting** (required before commits):
 ```bash
 ruff format .  # Format code with ruff tool
 ```
 
-**OneBot11 Integration Tests**:
-```bash
-# 在AstrBot环境中测试adapter配置
-# 需要在AstrBot插件加载后运行，非独立环境命令
-# python -c "from core import create_onebot_adapter; print('OneBot11 ready')"
-```
-
 **Test Commands**:
 ```bash
-# Basic functionality
-/sunos help
+# Basic functionality  
 /sunos ck list
-/sunos status
+/sunos ck add test "Test reply"  # Admin only
+/sunos ck del 1                   # Admin only
 
-# Admin functions (requires admin role in AstrBot)
-/sunos enable
-/sunos ck add test "Test reply"
-/sunos wc set "Welcome {user} to group {group}!"
+# Note: /sunos help is handled by main SunOS plugin
 ```
 
-## Architecture v2.0
+## Smart Architecture v3.1
 
-### Modern MVC Architecture
+### Direct Implementation with Migration
 
-**Layer Structure**:
+**Single File Structure**:
 ```
-main.py (Star Plugin Class)
-    ↓ (Service Integration)
-core/services.py (Business Logic)
-    ↓ (Data Access)
-core/database.py (Data Access Layer)
-    ↓ (Database Operations)
-core/utils.py (Helper Functions)
-core/handlers.py (Event Processing)
-core/permissions.py (Authorization)
-core/platform.py (Platform Abstraction)
+main.py (Complete Plugin Implementation)
+    ↓ (Intelligent Database Migration)
+data/sunos/sunos_keywords.db (Optimized Keywords Database)
 ```
 
-**Component Responsibilities**:
-- **SunosDatabase**: Direct database operations with table management
-- **Services**: Business logic with database integration (KeywordService, WelcomeService, etc.)
-- **Handlers**: Event processing and auto-reply logic (GroupEventHandler, AutoReplyHandler)
-- **Permissions**: Authorization and access control decorators
-- **Platform**: Cross-platform adapter for different messaging systems
-- **Utils**: Helper functions (message building, validation, notification management)
+**Key Features**:
+- **Smart Migration**: Automatic detection and migration from legacy database
+- **Optimized Storage**: Standardized path structure following AstrBot best practices
+- **Data Safety**: Backup creation during migration process
+- **Backward Compatibility**: Seamless upgrade from v3.0 to v3.1
 
-### Dependency Injection Container
+### Enhanced Database Management
 
-**Service Initialization** (`main.py:93-119`):
-```python
-# 初始化核心组件
-self.db = SunosDatabase()
-self.platform_adapter = PlatformAdapter(context)
-self.notification_manager = NotificationManager(cooldown=30)
-
-# 初始化服务层
-self.keyword_service = KeywordService(self.db)
-self.welcome_service = WelcomeService(self.db)
-self.blacklist_service = BlacklistService(self.db)
-self.group_service = GroupService(self.db)
-
-# 初始化事件处理器
-self.group_event_handler = GroupEventHandler(
-    self.blacklist_service, self.welcome_service,
-    self.platform_adapter, self.notification_manager
-)
-self.auto_reply_handler = AutoReplyHandler(
-    self.keyword_service, self.group_service
+**Optimized Table Design**:
+```sql
+CREATE TABLE keywords (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    keyword TEXT NOT NULL,
+    reply TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )
 ```
 
-**Benefits**:
-- **Service Integration**: Direct database access through service layer
-- **Event-Driven**: Specialized handlers for different event types
-- **Modular Design**: Clear separation between data, business logic, and presentation
-- **Maintainability**: Well-defined component boundaries reduce complexity
+**Migration Features**:
+- **Automatic Detection**: Detects legacy database at startup
+- **Safe Migration**: Creates backup before data transfer
+- **Data Preservation**: Migrates only keyword data, ignoring deprecated tables
+- **Error Recovery**: Cleanup on migration failure
 
-### Decorator System
+### Core Functionality
 
-**Available Decorators**:
+**Keyword Management**:
+- `_add_keyword()` - Insert with duplicate check
+- `_delete_keyword()` - Delete by index
+- `_list_keywords()` - Simple SELECT and format
+- `_find_keyword_reply()` - Case-insensitive matching
+
+**Command Processing**:
 ```python
-from .permissions import admin_required, group_only
-
-@admin_required                              # Permission checking
-@group_only                                  # Group chat validation  
-async def handler(self, event):              # Method with decorators
-    # Handler logic with validation/permissions handled automatically
+@filter.command("sunos")
+async def sunos_command(self, event):
+    # Direct argument parsing
+    # Simple if/elif command routing
+    # Immediate database operations
 ```
 
-**Cross-Cutting Concerns**:
-- **Permission Management**: Automatic admin/group validation
-- **Authorization**: Role-based access control for sensitive operations
-- **Error Handling**: Unified exception handling with user-friendly messages
-
-### Service Layer Features
-
-**Business Logic Separation**:
-- **KeywordService**: Keyword CRUD with duplicate detection
-- **WelcomeService**: Template-based welcome message management
-- **GroupService**: Feature toggle with status tracking
-- **BlacklistService**: User blacklist management with validation
-
-### Service Layer Architecture
-
-**Business Service Classes**:
+**Auto Reply Logic**:
 ```python
-# Service classes handle business logic with database integration
-class KeywordService:
-    def __init__(self, db: SunosDatabase):
-        self.db = db
-    
-    def add_keyword(self, keyword: str, reply: str) -> Tuple[bool, str]:
-        # Business logic with validation and database operations
+@filter.event_message_type(filter.EventMessageType.ALL)
+async def handle_auto_reply(self, event):
+    # Skip commands
+    # Direct keyword lookup
+    # Immediate reply if match found
 ```
-
-**Service Features**:
-- **Database Integration**: Direct access to SunosDatabase for data operations
-- **Business Logic**: Validation, processing, and error handling
-- **Return Patterns**: Consistent (success: bool, message: str) return format
-- **Error Handling**: Comprehensive validation and user-friendly error messages
-
-### Template System
-
-**Simple Placeholder Engine** (`core/utils.py:MessageBuilder`):
-```python
-# Supported Placeholders
-{user}   # Replaced with @user component
-{group}  # Replaced with group ID
-
-# Usage Example
-welcome_msg = "Welcome {user} to group {group}!"
-chain = MessageBuilder.build_welcome_chain(welcome_msg, user_id, group_id)
-```
-
-**Template Features**:
-- **Basic Substitution**: Simple placeholder replacement for user and group
-- **Component Integration**: Automatic @user component generation
-- **Message Chain Building**: Integration with AstrBot message component system
-
-### AstrBot Core Architecture
-
-**"Onion Model" Pipeline**: AstrBot processes messages through nested stages
-1. **EventBus**: Async queue receives events from platform adapters
-2. **PipelineScheduler**: Executes stages in onion pattern (enter → process → exit)
-3. **Stage Flow**: `WakingStage → PluginStage → LLMStage → ResponseStage`
-4. **Async Generators**: Each stage can `yield` to pause and resume processing
-
-**Component Hierarchy**:
-- **ProviderManager**: LLM supplier management
-- **PlatformManager**: Message platform adapters (QQ, Telegram, etc)
-- **PluginManager**: Plugin loading and execution
-- **ConversationManager**: Session and dialogue tracking
-- **EventBus**: Central message dispatch system
-
-### AstrMessageEvent System
-
-**Core Event Object** (`event: AstrMessageEvent`):
-- **Message Data**: `event.message_str` (plain text), `event.message_obj` (rich components)
-- **Session Info**: `event.unified_msg_origin` (unique session ID), `event.session_id`
-- **User Context**: `event.role` ("admin"/"member"), `event.get_sender_id()`, `event.get_group_id()`
-- **Platform Info**: `event.get_platform_name()`, `event.platform_meta`
-
-**Event Control Methods**:
-- `event.stop_event()` - Halt further processing stages
-- `event.continue_event()` - Resume processing
-- `event.should_call_llm(False)` - Skip default LLM stage
-- `event.set_extra(key, value)` / `event.get_extra(key)` - Cross-stage data
-
-**Response Generation**:
-- `yield event.plain_result(text)` - Text response
-- `yield event.chain_result([Comp.Plain(), Comp.At()])` - Rich message chain
-- `yield event.image_result(path_or_url)` - Image response
-- `await event.send(message_chain)` - Direct send (no yield)
-
-### Plugin Framework (Star Class)
-
-**Plugin Base Class** (`main.py:20`):
-- Inherit from `Star` base class: `class SunosPlugin(Star)`
-- **Required**: `@register(name, author, desc, version, repo)` decorator
-- **Required**: `async def terminate(self)` method for cleanup
-- Access AstrBot via `self.context: Context`
-
-**Event Handlers with Filters**:
-```python
-@filter.command("commandname")                    # Command: /commandname
-@filter.command_group("group")                    # Command group: /group subcommand
-@filter.event_message_type(EventMessageType.ALL) # All messages
-@filter.platform_adapter_type(PlatformAdapterType.AIOCQHTTP) # Platform-specific
-@filter.permission_type(PermissionType.ADMIN)    # Admin-only
-```
-
-**Context API** (`self.context`):
-- `get_using_provider()` - Current LLM provider
-- `get_llm_tool_manager()` - Function calling tools
-- `get_config()` - AstrBot configuration
-- `send_message(session_id, message_chain)` - Active messaging
-- `get_registered_star(name)` - Other plugin instances
-
-### Database Architecture
-
-**Modern Repository Pattern**:
-- **BaseRepository**: Abstract interface with transaction management
-- **Concrete Repositories**: Keyword, Welcome, Group repositories
-- **Connection Pooling**: Efficient database connection management
-- **Transaction Safety**: Automatic rollback on errors
-
-**Legacy Compatibility**:
-- **SunosDatabase**: Original database class maintained for compatibility
-- **Migration Path**: New services can gradually replace legacy methods
-- **Dual Access**: Both new repositories and legacy database available
 
 ## Development Guidelines
 
-### Modern Development Patterns
+### Simplicity Principles
 
-**Repository Pattern Usage**:
+**No Architecture Patterns**:
+- ❌ No MVC, MVP, or complex patterns
+- ❌ No service layers or repositories
+- ❌ No dependency injection
+- ✅ Direct implementation in main class
+
+**Direct Database Access**:
 ```python
-# Service layer uses repositories for data access
-class KeywordService:
-    def __init__(self, repo: KeywordRepository, cache: CacheService):
-        self.repo = repo        # Data access abstraction
-        self.cache = cache      # Cache management
-    
-    def add_keyword(self, keyword: str, reply: str) -> Tuple[bool, str]:
-        # Business logic with caching integration
+def _add_keyword(self, keyword: str, reply: str):
+    with sqlite3.connect(self.db_path) as conn:
+        # Direct SQL operations
+        conn.execute("INSERT INTO keywords ...")
 ```
 
-**Decorator-Based Validation**:
+**Simple Error Handling**:
 ```python
-@admin_required                 # Automatic permission checking
-@validate_params(min_count=2)   # Parameter count validation
-async def _handle_add(self, event: AstrMessageEvent, params: List[str]):
-    # Clean handler logic without boilerplate validation
+try:
+    # Database operation
+except Exception as e:
+    logger.error(f"Operation failed: {e}")
+    return False, "Operation failed"
 ```
 
-**Error Handling Strategy**:
-```python
-@error_handler_decorator("主命令处理")  # Automatic exception handling
-async def sunos_main(self, event: AstrMessageEvent):
-    # Business logic with automatic error recovery
+### Code Style
+
+**Function Naming**:
+- Use `_private_methods()` for internal operations
+- Use descriptive names: `_add_keyword()` not `_add()`
+- Keep methods focused and single-purpose
+
+**Data Handling**:
+- Use simple tuples for return values: `(success: bool, message: str)`
+- Direct string formatting for user messages
+- Basic validation without complex frameworks
+
+**Event Handling**:
+- Single event handler for auto-reply
+- Skip command messages to avoid conflicts
+- Direct string matching for keywords
+
+### Testing Strategy
+
+**Manual Testing**:
+```bash
+# Test keyword addition
+/sunos ck add hello "Hello there!"
+
+# Test auto-reply
+# Send message containing "hello" 
+# Should receive "Hello there!" as reply
+
+# Test listing
+/sunos ck list
+
+# Test deletion
+/sunos ck del 1
 ```
 
-### Performance Optimizations
+**Validation Points**:
+- Admin permission checking works
+- Keywords are case-insensitive matched
+- Database operations complete successfully
+- Auto-reply doesn't interfere with commands
 
-**Caching Strategy**:
-- **Method-Level Caching**: Frequently accessed data cached automatically
-- **Cache Invalidation**: Smart cache clearing on data mutations
-- **Statistics Tracking**: Monitor cache hit rates for optimization
-- **TTL Configuration**: Configurable expiration times per use case
+## File Structure
 
-**Database Optimizations**:
-- **Connection Pooling**: Reuse database connections efficiently
-- **Batch Operations**: Multiple operations in single transaction
-- **Index Usage**: Proper indexing for query performance
-- **Query Optimization**: Prepared statements and efficient queries
-
-### Testing and Quality Assurance
-
-**Code Quality Tools**:
-- **Type Checking**: Full mypy compatibility with type hints
-- **Code Formatting**: ruff for consistent code style
-- **Import Sorting**: Organized imports with proper dependencies
-- **Documentation**: Comprehensive docstrings with parameter types
-
-**Testing Strategy**:
-- **Unit Tests**: Test individual components in isolation
-- **Integration Tests**: Test service layer interactions
-- **Mock Dependencies**: Easy testing with dependency injection
-- **Error Case Testing**: Comprehensive error handling validation
-
-### Migration Strategy
-
-**Legacy Compatibility**:
-- **Backward Compatibility**: Old database methods still work
-- **Gradual Migration**: New features use modern architecture
-- **Dual Support**: Both old and new APIs available during transition
-- **Documentation**: Clear migration path for existing code
-
-**Future Enhancements**:
-- **Plugin Hot Reload**: Runtime configuration updates
-- **Multi-Language Support**: Internationalization framework
-- **Advanced Templating**: More sophisticated template features
-- **Monitoring Integration**: Performance metrics and health checks
-
-## Core Development Patterns
-
-**Async Generator Pattern**:
-```python
-async def handler(self, event: AstrMessageEvent):
-    yield event.plain_result("First response")
-    # Can yield multiple responses
-    yield event.image_result("path/to/image.jpg")
+**Simplified Structure**:
+```
+sunos/
+├── main.py (Complete implementation ~230 lines)
+└── CLAUDE.md (This documentation)
 ```
 
-**Modern Message Chain Construction**:
-```python
-import astrbot.api.message_components as Comp
-from .utils import MessageBuilder
+**What Was Removed**:
+- ❌ `core/` directory with 8+ modules
+- ❌ Complex service classes  
+- ❌ Permission decorators
+- ❌ Platform adapters
+- ❌ Event handlers
+- ❌ MVC architecture
+- ❌ Dependency injection
+- ❌ Test files and planning docs
 
-# Template-based message building
-welcome_msg = "Welcome {user} to {group}!"
-chain = MessageBuilder.build_welcome_chain(welcome_msg, user_id, group_id)
+## Core Features
 
-# Rich message chain construction  
-chain = [
-    Comp.At(qq=user_id),
-    Comp.Plain(" 欢迎加入群聊！")
-]
-yield event.chain_result(chain)
-```
+**Available Commands**:
+- `/sunos ck list` - List all keywords (anyone can use)
+- `/sunos ck add <keyword> <reply>` - Add keyword (admin only)
+- `/sunos ck del <index>` - Delete keyword by index (admin only)
 
-**Service Layer Integration**:
-```python
-# Clean business logic with automatic caching
-result = self.keyword_service.find_keyword_reply(message_text)
-if result:
-    yield event.plain_result(result)
-```
+**Note**: `/sunos help` and general SunOS commands are handled by the main SunOS controller plugin.
+
+**Auto-Reply**:
+- Scans all messages for keyword matches
+- Case-insensitive substring matching
+- Responds immediately with stored reply
+- Skips command messages to avoid conflicts
+
+**Administration**:
+- Simple `event.role == "admin"` check
+- No complex permission hierarchy
+- No group-specific permissions
+
+## Migration From v2.0
+
+**What Changed**:
+- Removed all MVC/service architecture
+- Eliminated complex permission system
+- Removed group management features
+- Removed welcome message functionality  
+- Removed blacklist management
+- Removed platform adapter abstractions
+- Simplified to pure keyword functionality
+
+**Compatibility**:
+- Database auto-migrates from legacy location
+- Commands remain `/sunos ck ...` for compatibility with SunOS plugin series
+- Auto-reply behavior unchanged
+- Admin permission checking simplified
+
+## Performance
+
+**Database Operations**:
+- **Smart Migration**: One-time migration from legacy database location
+- **Optimized Path**: Follows AstrBot standard `data/sunos/` structure
+- **Backup Safety**: Automatic backup creation during migration
+- **Error Handling**: Comprehensive migration error recovery
+
+**Memory Usage**:
+- Single plugin class instance
+- No complex object hierarchies
+- Direct string processing
+- Minimal memory footprint
+
+**Processing Speed**:
+- Direct method calls (no abstraction overhead)
+- Simple string operations
+- Fast SQLite queries
+- Immediate response generation
+
+This optimized version focuses on **intelligent keyword management** with **seamless database migration**, providing a **professional upgrade path** from the previous version while maintaining the core simplicity principle.
