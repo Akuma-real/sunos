@@ -60,14 +60,21 @@
 ### 基础使用
 
 ```bash
-# 查看词库列表
+# 查看帮助（支持 / 或 . 前缀）
+/sunos ck help
+.sunos ck help
+
+# 查看词库列表（支持 / 或 . 前缀）
 /sunos ck list
+.sunos ck list
 
 # 添加关键词（需要管理员权限）
 /sunos ck add hello "你好！很高兴见到你"
+.sunos ck add hello "你好！很高兴见到你"
 
-# 删除关键词（需要管理员权限）  
+# 删除关键词（需要管理员权限）
 /sunos ck del 1
+.sunos ck del 1
 
 # 测试自动回复
 # 发送包含"hello"的消息，插件会自动回复

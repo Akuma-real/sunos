@@ -232,10 +232,20 @@ class SunKeywordPlugin(Star):
     async def _handle_keyword_commands(self, event: AstrMessageEvent, args: List[str]):
         """处理词库子命令"""
         if len(args) < 3:
-            yield event.plain_result("用法: /sunos ck <add|del|list>")
+            yield event.plain_result("用法: /sunos ck <help|add|del|list>")
             return
 
         sub_cmd = args[2]
+
+        if sub_cmd in ("help", "h", "?"):
+            yield event.plain_result(
+                "SunKeyword 指南:\n"
+                "- /sunos ck list         查看当前词库\n"
+                "- /sunos ck add 词 回复  添加词库（管理员）\n"
+                "- /sunos ck del 序号     删除词库（管理员）\n"
+                "提示: 也支持以 .sunos 为前缀，例如 .sunos ck list"
+            )
+            return
 
         if sub_cmd == "add":
             if not self._is_admin(event):
@@ -272,7 +282,7 @@ class SunKeywordPlugin(Star):
             yield event.plain_result(message)
 
         else:
-            yield event.plain_result("未知操作，支持: add, del, list")
+            yield event.plain_result("未知操作，使用 /sunos ck help 查看帮助")
 
     # ==================== 自动回复 ====================
     
@@ -293,6 +303,21 @@ class SunKeywordPlugin(Star):
                 
         except Exception as e:
             logger.error(f"自动回复失败: {e}")
+
+    @filter.event_message_type(filter.EventMessageType.ALL, priority=1)
+    async def handle_dot_prefix(self, event: AstrMessageEvent):
+        """兼容以 .sunos 开头的指令前缀，确保 .sunos ck 可用"""
+        try:
+            msg = event.message_str.strip()
+            if not msg.startswith(".sunos"):
+                return
+            args = msg.split()
+            # 结构: .sunos ck ...
+            if len(args) >= 2 and args[0].endswith("sunos") and args[1] == "ck":
+                async for res in self._handle_keyword_commands(event, args):
+                    yield res
+        except Exception as e:
+            logger.error(f".sunos 指令兼容处理失败: {e}")
 
     async def terminate(self):
         """插件卸载"""
