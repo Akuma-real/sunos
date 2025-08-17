@@ -1,15 +1,13 @@
-# SunOS 插件依赖
+# SunKeyword 智能词库回复插件依赖
 
-# HTTP客户端（OneBot11适配器）
-aiohttp>=3.8.0
+# 核心依赖 - 无外部依赖
+# sqlite3 是 Python 标准库的一部分
+# shutil 是 Python 标准库的一部分  
+# typing 是 Python 标准库的一部分
 
-# 数据库相关
-# sqlite3 是 Python 标准库的一部分，但为了明确说明数据库依赖，这里列出
-# sqlite3  # Python 内置模块
+# 说明: 此插件专为简洁性设计，仅使用 Python 标准库
+# 无需安装额外的第三方包
 
-# 如果需要更高级的 SQLite 功能，可以使用以下库：
+# 如果需要扩展功能，可考虑以下可选依赖：
 # sqlite-utils>=3.30.0  # SQLite 工具库（可选）
-# sqlalchemy>=1.4.0     # ORM 框架（可选）
-
-# 其他依赖
-# typing_extensions>=4.0.0  # 类型注解扩展（Python 3.8+ 内置）
+# aiofiles>=0.8.0       # 异步文件操作（可选）
