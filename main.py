@@ -45,6 +45,13 @@ class SunKeywordPlugin(Star):
         
         logger.info("SunKeyword 智能词库插件 v3.1.0 初始化完成")
 
+    def _normalize_text(self, text: str) -> str:
+        """将用户输入中的转义换行(\\n)转换为实际换行。"""
+        try:
+            return text.replace("\\n", "\n")
+        except Exception:
+            return text
+
     def _migrate_database(self):
         """数据库迁移：从旧路径迁移到新路径"""
         # 旧库位于 data/ 根目录下
@@ -134,6 +141,8 @@ class SunKeywordPlugin(Star):
     def _add_keyword(self, keyword: str, reply: str) -> Tuple[bool, str]:
         """添加关键词"""
         try:
+            # 规范化换行：将“\n”转为实际换行
+            reply = self._normalize_text(reply)
             with sqlite3.connect(self.db_path) as conn:
                 # 检查是否已存在
                 cursor = conn.execute("SELECT COUNT(*) FROM keywords WHERE keyword = ?", (keyword,))
@@ -181,11 +190,13 @@ class SunKeywordPlugin(Star):
                 lines = ["📚 当前词库列表:", ""]
                 for i, (keyword, reply) in enumerate(keywords, 1):
                     # 限制显示长度
-                    reply_preview = reply[:30] + "..." if len(reply) > 30 else reply
+                    normalized = self._normalize_text(reply)
+                    reply_preview = normalized[:30] + "..." if len(normalized) > 30 else normalized
                     lines.append(f"{i}. {keyword} → {reply_preview}")
                 
                 lines.append(f"\n共 {len(keywords)} 条记录")
-                return "\n".join(lines)
+                # 使用实际换行符拼接
+                return "\n".join(lines).replace("\\n", "\n")
         except Exception as e:
             logger.error(f"获取词库列表失败: {e}")
             return "获取词库列表失败"
@@ -246,9 +257,13 @@ class SunKeywordPlugin(Star):
         if sub_cmd in ("help", "h", "?"):
             yield event.plain_result(
                 "SunKeyword 指南:\n"
+                .replace("\\n", "\n") +
                 "- /sunos ck list         查看当前词库\n"
+                .replace("\\n", "\n") +
                 "- /sunos ck add 词 回复  添加词库（管理员）\n"
+                .replace("\\n", "\n") +
                 "- /sunos ck del 序号     删除词库（管理员）\n"
+                .replace("\\n", "\n") +
                 "提示: 也支持以 .sunos 为前缀，例如 .sunos ck list"
             )
             return
@@ -312,7 +327,8 @@ class SunKeywordPlugin(Star):
             # 查找匹配的关键词
             reply = self._find_keyword_reply(message_text)
             if reply:
-                yield event.plain_result(reply)
+                # 输出前规范化：处理用户存储的“\n”
+                yield event.plain_result(self._normalize_text(reply))
                 
         except Exception as e:
             logger.error(f"自动回复失败: {e}")
