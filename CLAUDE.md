@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a SunOS group chat management plugin for AstrBot v2.0, providing keyword management, welcome messages, and auto-reply functionality for QQ groups. The plugin has been completely refactored using modern MVC architecture with dependency injection.
+This is a SunOS group chat management plugin for AstrBot v2.0, providing keyword management, welcome messages, and auto-reply functionality for QQ groups. The plugin has been completely refactored using modern MVC architecture with dependency injection and now includes OneBot11 API integration for enhanced group management capabilities.
 
 ## Development Commands
 
@@ -17,6 +17,15 @@ This is a SunOS group chat management plugin for AstrBot v2.0, providing keyword
 **Code Formatting** (required before commits):
 ```bash
 ruff format .  # Format code with ruff tool
+```
+
+**OneBot11 Integration Tests**:
+```bash
+# Test OneBot11 adapter functionality
+python test_code_quality.py
+
+# Test adapter configuration (requires OneBot11 server)
+python -c "from core import create_onebot_adapter; print('OneBot11 ready')"
 ```
 
 **Test Commands**:
