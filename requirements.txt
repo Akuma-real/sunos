@@ -1,5 +1,8 @@
 # SunOS 插件依赖
 
+# HTTP客户端（OneBot11适配器）
+aiohttp>=3.8.0
+
 # 数据库相关
 # sqlite3 是 Python 标准库的一部分，但为了明确说明数据库依赖，这里列出
 # sqlite3  # Python 内置模块

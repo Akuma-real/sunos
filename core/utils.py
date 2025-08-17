@@ -9,23 +9,42 @@ from astrbot.api import logger
 
 
 class ValidationUtils:
-    """输入验证工具类"""
+    """输入验证工具类
+    
+    提供各种输入验证方法，确保数据安全和格式正确：
+    - 参数数量验证
+    - 文本长度验证 
+    - 用户ID格式验证
+    """
     
     @staticmethod
     def validate_params(params: list, min_count: int) -> bool:
-        """验证参数数量"""
+        """验证参数数量是否满足最小要求
+        
+        Args:
+            params: 参数列表
+            min_count: 最小参数数量
+            
+        Returns:
+            bool: 参数数量是否足够
+        """
         return len(params) >= min_count
 
     @staticmethod
     def validate_input_length(
         text: str, max_length: int = 1000, field_name: str = "输入"
     ) -> Tuple[bool, str]:
-        """验证输入长度，防止过长内容
+        """验证输入长度，防止过长内容导致存储或显示问题
+        
+        检查流程：
+        1. 验证文本不为空
+        2. 检查长度是否超过限制
+        3. 返回验证结果和错误信息
         
         Args:
             text: 要验证的文本
             max_length: 最大长度限制
-            field_name: 字段名称，用于错误提示
+            field_name: 字段名称，用于生成友好的错误提示
             
         Returns:
             tuple: (是否有效, 错误消息)
@@ -43,24 +62,49 @@ class ValidationUtils:
 
     @staticmethod
     def validate_user_id(user_id: str) -> bool:
-        """验证用户ID格式"""
+        """验证用户ID格式是否为纯数字
+        
+        QQ用户ID必须是数字格式，此方法确保输入符合要求
+        
+        Args:
+            user_id: 用户ID字符串
+            
+        Returns:
+            bool: 是否为有效的数字格式
+        """
         return user_id.isdigit()
 
 
 class MessageBuilder:
-    """消息构建工具类"""
+    """消息构建工具类
+    
+    负责构建各种类型的消息链，支持AstrBot的消息组件系统：
+    - 欢迎消息链（支持占位符替换和@功能）
+    - 黑名单通知消息链
+    - 复合消息组件处理
+    """
     
     @staticmethod
     def build_welcome_chain(welcome_msg: str, user_id: str, group_id: str) -> List:
-        """构建欢迎消息链
+        """构建欢迎消息链，支持占位符替换和@用户
+        
+        处理流程：
+        1. 解析欢迎语模板中的{user}占位符
+        2. 在{user}位置插入@组件
+        3. 替换{group}占位符为实际群号
+        4. 过滤空白组件，确保消息链有效
+        
+        支持的占位符：
+        - {user}: 会被替换为@用户组件
+        - {group}: 会被替换为群号
         
         Args:
-            welcome_msg: 欢迎语模板
-            user_id: 用户ID
-            group_id: 群组ID
+            welcome_msg: 欢迎语模板，可包含占位符
+            user_id: 用户ID，用于@功能
+            group_id: 群组ID，用于占位符替换
             
         Returns:
-            list: 消息链
+            list: AstrBot消息链，包含Plain和At组件
         """
         chain = []
         
@@ -75,7 +119,7 @@ class MessageBuilder:
                 if text.strip():  # 过滤空白文本，避免空Plain组件
                     chain.append(Comp.Plain(text))
         
-        # 确保消息链不为空
+        # 确保消息链不为空，提供默认欢迎消息
         if not chain:
             chain = [Comp.At(qq=user_id), Comp.Plain(" 欢迎加入群聊！")]
         

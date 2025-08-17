@@ -62,15 +62,27 @@ class GroupEventHandler:
             logger.error(f"处理群事件失败: {e}")
 
     async def handle_member_join(self, event: AstrMessageEvent, group_id: str, user_id: str):
-        """处理成员入群"""
+        """处理成员入群事件
+        
+        执行流程：
+        1. 验证用户ID是否有效
+        2. 检查用户是否在黑名单中
+        3. 如果在黑名单，尝试踢出并发送通知
+        4. 如果不在黑名单，发送欢迎消息
+        
+        Args:
+            event: 消息事件对象
+            group_id: 群组ID
+            user_id: 加入群聊的用户ID
+        """
         if not user_id:
             return
 
-        # 首先检查黑名单
+        # 首先检查黑名单 - 优先处理安全问题
         if self.blacklist_service.is_user_blacklisted(user_id, group_id):
             logger.info(f"检测到黑名单用户 {user_id} 尝试加入群聊 {group_id}")
 
-            # 获取黑名单信息
+            # 获取黑名单详细信息，用于踢出原因和日志记录
             blacklist_info = self.blacklist_service.get_user_blacklist_info(user_id, group_id)
             reason = ""
             if blacklist_info:
@@ -79,16 +91,17 @@ class GroupEventHandler:
                 scope_text = "全局黑名单" if bl_group_id is None else "群组黑名单"
                 logger.info(f"用户 {user_id} 在{scope_text}中，原因：{reason}，添加者：{added_by}")
 
-            # 尝试踢出用户
+            # 尝试踢出用户 - 调用平台适配器执行踢人操作
             success, kick_msg = await self.platform_adapter.kick_user_from_group(
                 event, user_id, f"黑名单用户：{reason}"
             )
 
-            # 使用防刷屏机制，避免频繁通知
+            # 使用防刷屏机制，避免频繁通知消息刷屏
             notification_key = f"blacklist_join_{group_id}"
             should_notify = self.notification_manager.should_send_notification(notification_key)
 
             if should_notify:
+                # 构建并发送黑名单用户处理通知消息
                 chain = MessageBuilder.build_blacklist_notification(
                     user_id, success, reason, kick_msg if not success else ""
                 )

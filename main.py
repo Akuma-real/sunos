@@ -32,8 +32,6 @@ from .core import (
     HelpTextBuilder,
     admin_required,
     group_only,
-    check_admin_permission,
-    check_group_chat,
     get_user_permission_level,
     check_real_group_admin_permission,
     PermissionLevel
@@ -51,9 +49,11 @@ class SunosPlugin(Star):
     """SunOS 群聊管理插件主类 - 模块化重构版本"""
     
     # 错误消息常量
-    ADMIN_REQUIRED_MSG = "此操作需要管理员权限（系统管理员或群管理员）"
-    GROUP_ONLY_MSG = "此功能仅支持群聊"
-    INVALID_PARAMS_MSG = "参数错误，使用 /sunos help 查看帮助"
+    ERROR_ADMIN_REQUIRED = "此操作需要管理员权限（系统管理员或群管理员）"
+    ERROR_GROUP_ONLY = "此功能仅支持群聊"
+    ERROR_INVALID_PARAMS = "参数错误，使用 /sunos help 查看帮助"
+    ERROR_COMMAND_FAILED = "命令处理失败，请稍后重试"
+    ERROR_UNKNOWN_ACTION = "未知操作，使用 /sunos 或 .sunos help 查看帮助"
     
     # 主帮助文本
     MAIN_HELP = """SunOS 群聊管理插件帮助
@@ -118,43 +118,96 @@ class SunosPlugin(Star):
         
         logger.info("SunOS 插件 v2.0 初始化完成 - 模块化架构")
 
+    # ==================== 通用工具方法 ====================
+    
+    def _handle_service_result(self, event: AstrMessageEvent, service_result: tuple):
+        """通用服务结果处理方法
+        
+        Args:
+            event: 消息事件对象
+            service_result: 服务层返回的 (is_success, message) 元组
+            
+        Returns:
+            消息事件结果
+        """
+        _, response_message = service_result
+        return event.plain_result(response_message)
+    
+    def _yield_usage_message(self, event: AstrMessageEvent, usage_text: str):
+        """生成并发送使用说明消息
+        
+        Args:
+            event: 消息事件对象
+            usage_text: 使用说明文本
+        """
+        yield event.plain_result(f"用法: {usage_text}")
+    
+    def _validate_command_params(self, event: AstrMessageEvent, command_args: list, 
+                                min_params: int, usage_message: str) -> bool:
+        """通用命令参数验证方法
+        
+        Args:
+            event: 消息事件对象
+            command_args: 命令参数列表
+            min_params: 最少参数数量
+            usage_message: 使用说明消息
+            
+        Returns:
+            验证是否通过
+        """
+        if not ValidationUtils.validate_params(command_args, min_params):
+            # 这里我们不能直接yield，需要调用者处理
+            return False
+        return True
+    
+    def _create_unknown_action_message(self, command_group: str) -> str:
+        """生成未知操作错误消息
+        
+        Args:
+            command_group: 命令组名（如 ck, wc, bl）
+            
+        Returns:
+            错误消息字符串
+        """
+        return f"未知操作，使用 /sunos {command_group} help 查看帮助"
+
     # ==================== 主命令处理 ====================
     
     async def _process_sunos_command(self, event: AstrMessageEvent):
         """统一处理sunos命令逻辑 - 支持多种触发方式(/sunos 和 .sunos)"""
         try:
-            message_parts = event.message_str.strip().split()
+            command_args = event.message_str.strip().split()
             
-            if len(message_parts) < 2:
+            if len(command_args) < 2:
                 yield event.plain_result(self.MAIN_HELP)
                 return
             
-            action = message_parts[1]
+            main_action = command_args[1]
             
             # 词库管理
-            if action == "ck":
-                async for result in self._handle_keyword_commands(event, message_parts):
+            if main_action == "ck":
+                async for result in self._process_keyword_commands(event, command_args):
                     yield result
             # 欢迎语管理
-            elif action == "wc":
-                async for result in self._handle_welcome_commands(event, message_parts):
+            elif main_action == "wc":
+                async for result in self._process_welcome_commands(event, command_args):
                     yield result
             # 黑名单管理
-            elif action == "bl":
-                async for result in self._handle_blacklist_commands(event, message_parts):
+            elif main_action == "bl":
+                async for result in self._process_blacklist_commands(event, command_args):
                     yield result
             # 群聊开关管理
-            elif action in ["enable", "disable", "status"]:
-                async for result in self._handle_group_commands(event, action):
+            elif main_action in ["enable", "disable", "status"]:
+                async for result in self._process_group_commands(event, main_action):
                     yield result
-            elif action == "help":
+            elif main_action == "help":
                 yield event.plain_result(self.MAIN_HELP)
             else:
-                yield event.plain_result("未知操作，使用 /sunos 或 .sunos help 查看帮助")
+                yield event.plain_result(self.ERROR_UNKNOWN_ACTION)
                 
         except Exception as e:
             logger.error(f"处理sunos命令失败: {e}")
-            yield event.plain_result("命令处理失败，请稍后重试")
+            yield event.plain_result(self.ERROR_COMMAND_FAILED)
     
     @filter.command("sunos")
     async def sunos_main(self, event: AstrMessageEvent):
@@ -164,318 +217,324 @@ class SunosPlugin(Star):
 
     # ==================== 词库管理命令 ====================
     
-    async def _handle_keyword_commands(self, event: AstrMessageEvent, message_parts: list):
+    async def _process_keyword_commands(self, event: AstrMessageEvent, command_args: list):
         """处理词库管理命令"""
-        if not ValidationUtils.validate_params(message_parts, 3):
-            yield event.plain_result("用法: /sunos ck <add|del|list|help>")
+        if not ValidationUtils.validate_params(command_args, 3):
+            async for result in self._yield_usage_message(event, "/sunos ck <add|del|list|help>"):
+                yield result
             return
 
-        subaction = message_parts[2]
+        sub_command = command_args[2]
 
-        if subaction == "add":
-            async for result in self._handle_keyword_add(event, message_parts):
+        if sub_command == "add":
+            async for result in self._process_keyword_add(event, command_args):
                 yield result
-        elif subaction == "del":
-            async for result in self._handle_keyword_delete(event, message_parts):
+        elif sub_command == "del":
+            async for result in self._process_keyword_delete(event, command_args):
                 yield result
-        elif subaction == "list":
-            success, message = self.keyword_service.get_keyword_list()
-            if success:
-                yield event.plain_result(message)
-            else:
-                yield event.plain_result(message)
-        elif subaction == "help":
+        elif sub_command == "list":
+            service_result = self.keyword_service.get_keyword_list()
+            yield self._handle_service_result(event, service_result)
+        elif sub_command == "help":
             yield event.plain_result(HelpTextBuilder.build_keyword_help())
         else:
-            yield event.plain_result("未知操作，使用 /sunos ck help 查看帮助")
+            yield event.plain_result(self._create_unknown_action_message("ck"))
 
     @admin_required
-    async def _handle_keyword_add(self, event: AstrMessageEvent, message_parts: list):
+    async def _process_keyword_add(self, event: AstrMessageEvent, command_args: list):
         """添加词库"""
-        if not ValidationUtils.validate_params(message_parts, 5):
-            yield event.plain_result("用法: /sunos ck add <关键词> <回复内容>")
+        if not ValidationUtils.validate_params(command_args, 5):
+            async for result in self._yield_usage_message(event, "/sunos ck add <关键词> <回复内容>"):
+                yield result
             return
 
-        keyword = message_parts[3]
-        reply = " ".join(message_parts[4:])
+        keyword_text = command_args[3]
+        reply_content = " ".join(command_args[4:])
         
-        success, message = self.keyword_service.add_keyword(keyword, reply)
-        yield event.plain_result(message)
+        is_success, response_message = self.keyword_service.add_keyword(keyword_text, reply_content)
+        yield self._handle_service_result(event, (is_success, response_message))
 
     @admin_required
-    async def _handle_keyword_delete(self, event: AstrMessageEvent, message_parts: list):
+    async def _process_keyword_delete(self, event: AstrMessageEvent, command_args: list):
         """删除词库"""
-        if not ValidationUtils.validate_params(message_parts, 4):
-            yield event.plain_result("用法: /sunos ck del <序号>")
+        if not ValidationUtils.validate_params(command_args, 4):
+            async for result in self._yield_usage_message(event, "/sunos ck del <序号>"):
+                yield result
             return
 
         try:
-            index = int(message_parts[3])
+            keyword_index = int(command_args[3])
         except ValueError:
             yield event.plain_result("序号必须是数字")
             return
 
-        success, message = self.keyword_service.delete_keyword(index)
-        yield event.plain_result(message)
+        is_success, response_message = self.keyword_service.delete_keyword(keyword_index)
+        yield self._handle_service_result(event, (is_success, response_message))
 
     # ==================== 欢迎语管理命令 ====================
     
-    async def _handle_welcome_commands(self, event: AstrMessageEvent, message_parts: list):
+    async def _process_welcome_commands(self, event: AstrMessageEvent, command_args: list):
         """处理欢迎语管理命令"""
-        if not ValidationUtils.validate_params(message_parts, 3):
-            yield event.plain_result("用法: /sunos wc <set|del|show|help>")
+        if not ValidationUtils.validate_params(command_args, 3):
+            async for result in self._yield_usage_message(event, "/sunos wc <set|del|show|help>"):
+                yield result
             return
 
-        subaction = message_parts[2]
+        sub_command = command_args[2]
 
-        if subaction == "set":
-            async for result in self._handle_welcome_set(event, message_parts):
+        if sub_command == "set":
+            async for result in self._process_welcome_set(event, command_args):
                 yield result
-        elif subaction == "del":
-            async for result in self._handle_welcome_delete(event, message_parts):
+        elif sub_command == "del":
+            async for result in self._process_welcome_delete(event, command_args):
                 yield result
-        elif subaction == "show":
-            async for result in self._handle_welcome_show(event, message_parts):
+        elif sub_command == "show":
+            async for result in self._process_welcome_show(event, command_args):
                 yield result
-        elif subaction == "help":
+        elif sub_command == "help":
             yield event.plain_result(HelpTextBuilder.build_welcome_help())
         else:
-            yield event.plain_result("未知操作，使用 /sunos wc help 查看帮助")
+            yield event.plain_result(self._create_unknown_action_message("wc"))
 
     @admin_required
     @group_only
-    async def _handle_welcome_set(self, event: AstrMessageEvent, message_parts: list):
+    async def _process_welcome_set(self, event: AstrMessageEvent, command_args: list):
         """设置欢迎语"""
-        if not ValidationUtils.validate_params(message_parts, 4):
-            yield event.plain_result("用法: /sunos wc set <欢迎语内容>")
+        if not ValidationUtils.validate_params(command_args, 4):
+            async for result in self._yield_usage_message(event, "/sunos wc set <欢迎语内容>"):
+                yield result
             return
 
-        welcome_msg = " ".join(message_parts[3:])
-        group_id = event.get_group_id()
+        welcome_message_content = " ".join(command_args[3:])
+        current_group_id = event.get_group_id()
         
-        success, message = self.welcome_service.set_welcome_message(group_id, welcome_msg)
-        yield event.plain_result(message)
+        service_result = self.welcome_service.set_welcome_message(current_group_id, welcome_message_content)
+        yield self._handle_service_result(event, service_result)
 
     @admin_required
     @group_only
-    async def _handle_welcome_delete(self, event: AstrMessageEvent, message_parts: list):
+    async def _process_welcome_delete(self, event: AstrMessageEvent, command_args: list):
         """删除欢迎语"""
-        group_id = event.get_group_id()
-        success, message = self.welcome_service.delete_welcome_message(group_id)
-        yield event.plain_result(message)
+        current_group_id = event.get_group_id()
+        service_result = self.welcome_service.delete_welcome_message(current_group_id)
+        yield self._handle_service_result(event, service_result)
 
     @group_only
-    async def _handle_welcome_show(self, event: AstrMessageEvent, message_parts: list):
+    async def _process_welcome_show(self, event: AstrMessageEvent, command_args: list):
         """查看欢迎语"""
-        group_id = event.get_group_id()
-        success, message = self.welcome_service.get_welcome_message(group_id)
-        yield event.plain_result(message)
+        current_group_id = event.get_group_id()
+        service_result = self.welcome_service.get_welcome_message(current_group_id)
+        yield self._handle_service_result(event, service_result)
 
     # ==================== 黑名单管理命令 ====================
     
-    async def _handle_blacklist_commands(self, event: AstrMessageEvent, message_parts: list):
+    async def _process_blacklist_commands(self, event: AstrMessageEvent, command_args: list):
         """处理黑名单管理命令"""
-        if not ValidationUtils.validate_params(message_parts, 3):
-            yield event.plain_result("用法: /sunos bl <add|del|list|check|scan|help>")
+        if not ValidationUtils.validate_params(command_args, 3):
+            async for result in self._yield_usage_message(event, "/sunos bl <add|del|list|check|scan|help>"):
+                yield result
             return
 
-        subaction = message_parts[2]
+        sub_command = command_args[2]
 
-        if subaction == "add":
-            async for result in self._handle_blacklist_add(event, message_parts):
+        if sub_command == "add":
+            async for result in self._process_blacklist_add(event, command_args):
                 yield result
-        elif subaction == "del":
-            async for result in self._handle_blacklist_delete(event, message_parts):
+        elif sub_command == "del":
+            async for result in self._process_blacklist_delete(event, command_args):
                 yield result
-        elif subaction == "list":
-            group_id = event.get_group_id()
-            success, message = self.blacklist_service.get_blacklist(group_id)
-            yield event.plain_result(message)
-        elif subaction == "check":
-            async for result in self._handle_blacklist_check(event, message_parts):
+        elif sub_command == "list":
+            current_group_id = event.get_group_id()
+            service_result = self.blacklist_service.get_blacklist(current_group_id)
+            yield self._handle_service_result(event, service_result)
+        elif sub_command == "check":
+            async for result in self._process_blacklist_check(event, command_args):
                 yield result
-        elif subaction == "scan":
-            async for result in self._handle_blacklist_scan(event, message_parts):
+        elif sub_command == "scan":
+            async for result in self._process_blacklist_scan(event, command_args):
                 yield result
-        elif subaction == "help":
+        elif sub_command == "help":
             yield event.plain_result(HelpTextBuilder.build_blacklist_help())
         else:
-            yield event.plain_result("未知操作，使用 /sunos bl help 查看帮助")
+            yield event.plain_result(self._create_unknown_action_message("bl"))
 
     @admin_required
-    async def _handle_blacklist_add(self, event: AstrMessageEvent, message_parts: list):
+    async def _process_blacklist_add(self, event: AstrMessageEvent, command_args: list):
         """添加黑名单"""
-        if not ValidationUtils.validate_params(message_parts, 4):
-            yield event.plain_result("用法: /sunos bl add <user_id> [reason]")
+        if not ValidationUtils.validate_params(command_args, 4):
+            async for result in self._yield_usage_message(event, "/sunos bl add <user_id> [reason]"):
+                yield result
             return
 
-        user_id = message_parts[3]
-        reason = " ".join(message_parts[4:]) if len(message_parts) > 4 else ""
+        target_user_id = command_args[3]
+        blacklist_reason = " ".join(command_args[4:]) if len(command_args) > 4 else ""
         
-        group_id = event.get_group_id()
-        added_by = event.get_sender_id()
+        current_group_id = event.get_group_id()
+        operator_user_id = event.get_sender_id()
 
         # 检查权限：全局黑名单需要系统管理员权限
-        permission_level = get_user_permission_level(event)
-        if group_id is None and permission_level != PermissionLevel.SUPER_ADMIN:
+        user_permission_level = get_user_permission_level(event)
+        if current_group_id is None and user_permission_level != PermissionLevel.SUPER_ADMIN:
             yield event.plain_result("添加全局黑名单需要系统管理员权限")
             return
 
-        success, message = self.blacklist_service.add_user_to_blacklist(
-            user_id, added_by, group_id, reason
+        service_result = self.blacklist_service.add_user_to_blacklist(
+            target_user_id, operator_user_id, current_group_id, blacklist_reason
         )
-        yield event.plain_result(message)
+        yield self._handle_service_result(event, service_result)
 
     @admin_required
-    async def _handle_blacklist_delete(self, event: AstrMessageEvent, message_parts: list):
+    async def _process_blacklist_delete(self, event: AstrMessageEvent, command_args: list):
         """删除黑名单"""
-        if not ValidationUtils.validate_params(message_parts, 4):
-            yield event.plain_result("用法: /sunos bl del <user_id>")
+        if not ValidationUtils.validate_params(command_args, 4):
+            async for result in self._yield_usage_message(event, "/sunos bl del <user_id>"):
+                yield result
             return
 
-        user_id = message_parts[3]
-        group_id = event.get_group_id()
+        target_user_id = command_args[3]
+        current_group_id = event.get_group_id()
 
         # 检查权限：全局黑名单需要系统管理员权限
-        permission_level = get_user_permission_level(event)
-        if group_id is None and permission_level != PermissionLevel.SUPER_ADMIN:
+        user_permission_level = get_user_permission_level(event)
+        if current_group_id is None and user_permission_level != PermissionLevel.SUPER_ADMIN:
             yield event.plain_result("操作全局黑名单需要系统管理员权限")
             return
 
-        success, message = self.blacklist_service.remove_user_from_blacklist(user_id, group_id)
-        yield event.plain_result(message)
+        service_result = self.blacklist_service.remove_user_from_blacklist(target_user_id, current_group_id)
+        yield self._handle_service_result(event, service_result)
 
-    async def _handle_blacklist_check(self, event: AstrMessageEvent, message_parts: list):
+    async def _process_blacklist_check(self, event: AstrMessageEvent, command_args: list):
         """检查黑名单状态"""
-        if not ValidationUtils.validate_params(message_parts, 4):
-            yield event.plain_result("用法: /sunos bl check <user_id>")
+        if not ValidationUtils.validate_params(command_args, 4):
+            async for result in self._yield_usage_message(event, "/sunos bl check <user_id>"):
+                yield result
             return
 
-        user_id = message_parts[3]
-        group_id = event.get_group_id()
+        target_user_id = command_args[3]
+        current_group_id = event.get_group_id()
 
-        is_blacklisted, message = self.blacklist_service.check_user_blacklist_status(user_id, group_id)
-        yield event.plain_result(message)
+        service_result = self.blacklist_service.check_user_blacklist_status(target_user_id, current_group_id)
+        yield self._handle_service_result(event, service_result)
 
     @admin_required
     @group_only
-    async def _handle_blacklist_scan(self, event: AstrMessageEvent, message_parts: list):
+    async def _process_blacklist_scan(self, event: AstrMessageEvent, command_args: list):
         """扫描群内黑名单用户"""
         yield event.plain_result("正在扫描群内黑名单用户，请稍候...")
         
         # 使用平台适配器扫描
-        success, result_msg = await self.platform_adapter.scan_group_for_blacklist(
+        scan_success, scan_result_message = await self.platform_adapter.scan_group_for_blacklist(
             event, self.blacklist_service.is_user_blacklisted
         )
         
-        if success and "发现" in result_msg and "个黑名单用户" in result_msg:
+        if scan_success and "发现" in scan_result_message and "个黑名单用户" in scan_result_message:
             # 如果发现了黑名单用户，需要进一步处理踢人
-            group_id = event.get_group_id()
-            group_members = await self.platform_adapter.get_group_member_list(event, group_id)
+            current_group_id = event.get_group_id()
+            group_member_list = await self.platform_adapter.get_group_member_list(event, current_group_id)
             
-            if group_members:
-                found_users = []
-                for user_id in group_members:
-                    if self.blacklist_service.is_user_blacklisted(str(user_id), group_id):
-                        found_users.append(str(user_id))
+            if group_member_list:
+                blacklisted_users = []
+                for member_user_id in group_member_list:
+                    if self.blacklist_service.is_user_blacklisted(str(member_user_id), current_group_id):
+                        blacklisted_users.append(str(member_user_id))
                 
-                if found_users:
-                    kicked_count = 0
-                    failed_count = 0
-                    error_details = []
+                if blacklisted_users:
+                    successful_kicks = 0
+                    failed_kicks = 0
+                    kick_error_details = []
                     
-                    for user_id in found_users:
+                    for blacklisted_user_id in blacklisted_users:
                         # 获取黑名单详情
-                        blacklist_info = self.blacklist_service.get_user_blacklist_info(user_id, group_id)
-                        reason = ""
-                        if blacklist_info:
-                            _, _, bl_group_id, bl_reason, added_by, created_at = blacklist_info
-                            reason = bl_reason if bl_reason else "黑名单用户"
+                        user_blacklist_info = self.blacklist_service.get_user_blacklist_info(blacklisted_user_id, current_group_id)
+                        kick_reason = ""
+                        if user_blacklist_info:
+                            _, _, _, blacklist_reason, _, _ = user_blacklist_info
+                            kick_reason = blacklist_reason if blacklist_reason else "黑名单用户"
                         
-                        success, msg = await self.platform_adapter.kick_user_from_group(
-                            event, user_id, f"黑名单用户：{reason}"
+                        kick_success, kick_message = await self.platform_adapter.kick_user_from_group(
+                            event, blacklisted_user_id, f"黑名单用户：{kick_reason}"
                         )
-                        if success:
-                            kicked_count += 1
+                        if kick_success:
+                            successful_kicks += 1
                         else:
-                            failed_count += 1
-                            error_details.append(f"用户 {user_id}: {msg}")
+                            failed_kicks += 1
+                            kick_error_details.append(f"用户 {blacklisted_user_id}: {kick_message}")
                     
                     # 生成详细的结果报告
-                    result_msg = f"群内扫描完成，检查了 {len(group_members)} 名成员\n"
-                    result_msg += f"发现黑名单用户：{len(found_users)} 个\n"
-                    result_msg += f"成功处理：{kicked_count} 个\n"
-                    if failed_count > 0:
-                        result_msg += f"处理失败：{failed_count} 个\n"
-                        if error_details:
-                            result_msg += "失败详情：\n" + "\n".join(error_details[:3])
-                            if len(error_details) > 3:
-                                result_msg += f"\n... 还有 {len(error_details) - 3} 个错误"
+                    scan_result_message = f"群内扫描完成，检查了 {len(group_member_list)} 名成员\n"
+                    scan_result_message += f"发现黑名单用户：{len(blacklisted_users)} 个\n"
+                    scan_result_message += f"成功处理：{successful_kicks} 个\n"
+                    if failed_kicks > 0:
+                        scan_result_message += f"处理失败：{failed_kicks} 个\n"
+                        if kick_error_details:
+                            scan_result_message += "失败详情：\n" + "\n".join(kick_error_details[:3])
+                            if len(kick_error_details) > 3:
+                                scan_result_message += f"\n... 还有 {len(kick_error_details) - 3} 个错误"
         
-        yield event.plain_result(result_msg)
+        yield event.plain_result(scan_result_message)
 
     # ==================== 群聊开关管理 ====================
     
-    async def _handle_group_commands(self, event: AstrMessageEvent, action: str):
+    async def _process_group_commands(self, event: AstrMessageEvent, main_action: str):
         """处理群聊开关命令"""
-        if action in ["enable", "disable"]:
-            async for result in self._handle_group_toggle(event, action):
+        if main_action in ["enable", "disable"]:
+            async for result in self._process_group_toggle(event, main_action):
                 yield result
-        elif action == "status":
-            async for result in self._handle_group_status(event):
+        elif main_action == "status":
+            async for result in self._process_group_status(event):
                 yield result
 
     @admin_required
     @group_only
-    async def _handle_group_toggle(self, event: AstrMessageEvent, action: str):
+    async def _process_group_toggle(self, event: AstrMessageEvent, toggle_action: str):
         """切换群聊开关"""
-        group_id = event.get_group_id()
-        enabled = action == "enable"
+        current_group_id = event.get_group_id()
+        is_enabled = toggle_action == "enable"
         
-        success, message = self.group_service.set_group_enabled(group_id, enabled)
-        yield event.plain_result(message)
+        service_result = self.group_service.set_group_enabled(current_group_id, is_enabled)
+        yield self._handle_service_result(event, service_result)
 
     @group_only
-    async def _handle_group_status(self, event: AstrMessageEvent):
+    async def _process_group_status(self, event: AstrMessageEvent):
         """查看群聊状态"""
-        group_id = event.get_group_id()
+        current_group_id = event.get_group_id()
         
         # 首先尝试使用异步API检查真实权限
-        real_admin_status = False
-        api_check_success = False
+        is_real_admin = False
+        api_check_successful = False
         
         try:
-            real_admin_status = await check_real_group_admin_permission(event, group_id)
-            api_check_success = True
-            logger.info(f"异步API权限检查结果: {real_admin_status}")
+            is_real_admin = await check_real_group_admin_permission(event, current_group_id)
+            api_check_successful = True
+            logger.info(f"异步API权限检查结果: {is_real_admin}")
         except Exception as e:
             logger.debug(f"异步API权限检查失败: {e}")
         
         # 获取基础权限级别
-        user_permission = get_user_permission_level(event)
+        user_permission_level = get_user_permission_level(event)
         
         # 确定最终权限显示文本
-        if user_permission == PermissionLevel.SUPER_ADMIN:
-            permission_text = "🔒 系统管理员"
-        elif real_admin_status and api_check_success:
-            permission_text = "👑 群聊管理员 (API确认)"
-        elif user_permission == PermissionLevel.GROUP_ADMIN:
-            permission_text = "👑 群聊管理员"
+        if user_permission_level == PermissionLevel.SUPER_ADMIN:
+            permission_display_text = "🔒 系统管理员"
+        elif is_real_admin and api_check_successful:
+            permission_display_text = "👑 群聊管理员 (API确认)"
+        elif user_permission_level == PermissionLevel.GROUP_ADMIN:
+            permission_display_text = "👑 群聊管理员"
         else:
-            permission_text = "👤 普通用户"
+            permission_display_text = "👤 普通用户"
         
         # 添加调试信息
-        logger.info(f"权限检测结果 - 用户:{event.get_sender_id()}, 群:{group_id}, "
-                   f"基础权限:{user_permission}, API结果:{real_admin_status}, "
-                   f"最终显示:{permission_text}")
+        logger.info(f"权限检测结果 - 用户:{event.get_sender_id()}, 群:{current_group_id}, "
+                   f"基础权限:{user_permission_level}, API结果:{is_real_admin}, "
+                   f"最终显示:{permission_display_text}")
 
-        keywords_count = len(self.keyword_service.db.get_all_keywords())
+        total_keywords_count = len(self.keyword_service.db.get_all_keywords())
         
-        status_message = self.group_service.get_group_status(
-            group_id, permission_text, keywords_count
+        group_status_message = self.group_service.get_group_status(
+            current_group_id, permission_display_text, total_keywords_count
         )
         
-        yield event.plain_result(status_message)
+        yield event.plain_result(group_status_message)
 
     # ==================== 事件处理 ====================
     
@@ -484,8 +543,8 @@ class SunosPlugin(Star):
         """统一事件处理入口 - 处理 .sunos 命令、自动回复和群事件"""
         try:
             # 优先处理 .sunos 命令（避免与其他功能冲突）
-            message_text = event.message_str.strip()
-            if message_text.startswith(".sunos"):
+            incoming_message_text = event.message_str.strip()
+            if incoming_message_text.startswith(".sunos"):
                 # 将 .sunos 命令路由到统一的命令处理逻辑
                 async for result in self._process_sunos_command(event):
                     yield result

@@ -24,6 +24,17 @@ from .permissions import (
 # 平台适配
 from .platform import PlatformAdapter
 
+# OneBot11适配器
+from .onebot_adapter import (
+    OneBotAdapter,
+    OneBotConfig, 
+    OneBotApiError,
+    OneBotNetworkError,
+    OneBotTimeoutError,
+    OneBotResponseError,
+    create_onebot_adapter
+)
+
 # 业务服务层
 from .services import (
     KeywordService,
@@ -67,6 +78,15 @@ __all__ = [
     
     # 平台适配
     'PlatformAdapter',
+    
+    # OneBot11适配器
+    'OneBotAdapter',
+    'OneBotConfig',
+    'OneBotApiError',
+    'OneBotNetworkError', 
+    'OneBotTimeoutError',
+    'OneBotResponseError',
+    'create_onebot_adapter',
     
     # 业务服务
     'KeywordService',

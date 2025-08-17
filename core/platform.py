@@ -9,9 +9,23 @@ from astrbot.api import logger
 
 
 class PlatformAdapter:
-    """平台适配器 - 统一平台操作接口"""
+    """平台适配器 - 统一平台操作接口
+    
+    封装不同消息平台的API调用，提供统一的操作接口：
+    - 支持平台检测和兼容性验证
+    - 提供群管理功能（踢人、获取成员列表等）
+    - 处理平台特定的错误和异常
+    - 支持跨平台的消息发送和管理
+    
+    当前主要支持aiocqhttp平台，其他平台会有功能限制提示
+    """
     
     def __init__(self, context: Context):
+        """初始化平台适配器
+        
+        Args:
+            context: AstrBot上下文对象，提供平台管理器访问
+        """
         self.context = context
 
     def is_platform_supported(
@@ -19,12 +33,16 @@ class PlatformAdapter:
     ) -> bool:
         """检查当前平台是否支持特定功能
         
+        不同平台的API能力不同，此方法用于功能兼容性检查：
+        - aiocqhttp: 支持完整的群管理功能
+        - 其他平台: 可能只支持基础消息功能
+        
         Args:
-            event: 消息事件
-            required_platform: 需要的平台名称
+            event: 消息事件对象，包含平台信息
+            required_platform: 需要的平台名称，默认aiocqhttp
             
         Returns:
-            bool: 是否支持
+            bool: 当前平台是否支持所需功能
         """
         platform_name = event.get_platform_name()
         if platform_name != required_platform:
@@ -37,11 +55,14 @@ class PlatformAdapter:
     def get_platform_instance(self, platform_name: str = "aiocqhttp"):
         """获取指定平台实例的通用方法
         
+        通过AstrBot的平台管理器获取特定平台的实例对象，
+        用于直接调用平台相关的API功能
+        
         Args:
-            platform_name: 平台名称，默认为 aiocqhttp
+            platform_name: 平台名称，默认为aiocqhttp
             
         Returns:
-            平台实例对象，如果未找到则返回 None
+            平台实例对象，如果平台未启用或不存在则返回None
         """
         try:
             platform_mgr = self.context.platform_manager

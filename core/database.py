@@ -34,65 +34,122 @@ class SunosDatabase:
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
-
-                # 词库表
-                cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS keywords (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        keyword TEXT NOT NULL,
-                        reply TEXT NOT NULL,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )
-                """)
-
-                # 欢迎语表
-                cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS welcome_messages (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        group_id TEXT NOT NULL UNIQUE,
-                        message TEXT NOT NULL,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )
-                """)
-
-                # 群聊开关表
-                cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS group_settings (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        group_id TEXT NOT NULL UNIQUE,
-                        enabled BOOLEAN DEFAULT TRUE,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )
-                """)
-
-                # 黑名单表
-                cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS blacklist (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        user_id TEXT NOT NULL,
-                        group_id TEXT,  -- NULL表示全局黑名单，否则为群组特定黑名单
-                        reason TEXT DEFAULT '',
-                        added_by TEXT NOT NULL,  -- 添加者的user_id
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        UNIQUE(user_id, group_id)  -- 防重复：同一用户在同一群（或全局）只能有一条记录
-                    )
-                """)
-
-                # 优化查询性能的索引
-                cursor.execute("""
-                    CREATE INDEX IF NOT EXISTS idx_blacklist_user_id ON blacklist(user_id)
-                """)
-                cursor.execute("""
-                    CREATE INDEX IF NOT EXISTS idx_blacklist_group_id ON blacklist(group_id)
-                """)
-
+                
+                self._create_keywords_table(cursor)
+                self._create_welcome_messages_table(cursor)
+                self._create_group_settings_table(cursor)
+                self._create_blacklist_table(cursor)
+                self._create_indexes(cursor)
+                
                 conn.commit()
                 logger.info("Sunos 数据库初始化完成")
         except Exception as e:
             logger.error(f"数据库初始化失败: {e}")
+
+    def _create_keywords_table(self, cursor):
+        """创建词库表结构
+        
+        表结构设计：
+        - id: 自增主键，唯一标识每个词库条目
+        - keyword: 关键词文本，用户触发的文本内容
+        - reply: 回复内容，支持换行和特殊字符
+        - created_at: 创建时间戳，自动记录添加时间
+        """
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS keywords (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                keyword TEXT NOT NULL,
+                reply TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+    def _create_welcome_messages_table(self, cursor):
+        """创建欢迎语表结构
+        
+        表结构设计：
+        - id: 自增主键
+        - group_id: 群组ID，唯一标识群聊
+        - message: 欢迎语内容，支持占位符{user}和{group}
+        - created_at: 创建时间
+        - updated_at: 更新时间，每次修改欢迎语时更新
+        
+        约束：group_id设为UNIQUE，确保每个群只有一条欢迎语
+        """
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS welcome_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                group_id TEXT NOT NULL UNIQUE,
+                message TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+    def _create_group_settings_table(self, cursor):
+        """创建群聊设置表结构
+        
+        表结构设计：
+        - id: 自增主键
+        - group_id: 群组ID，唯一标识群聊
+        - enabled: 功能开关，TRUE为开启，FALSE为关闭
+        - created_at: 创建时间
+        - updated_at: 更新时间
+        
+        约束：group_id设为UNIQUE，确保每个群只有一条设置记录
+        """
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS group_settings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                group_id TEXT NOT NULL UNIQUE,
+                enabled BOOLEAN DEFAULT TRUE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+    def _create_blacklist_table(self, cursor):
+        """创建黑名单表结构
+        
+        表结构设计：
+        - id: 自增主键
+        - user_id: 用户ID，被拉黑的用户
+        - group_id: 群组ID，NULL表示全局黑名单
+        - reason: 拉黑原因，可选字段
+        - added_by: 添加者ID，记录操作人员
+        - created_at: 创建时间
+        - updated_at: 更新时间
+        
+        约束：UNIQUE(user_id, group_id) 防止重复拉黑
+        """
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS blacklist (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                group_id TEXT,  -- NULL表示全局黑名单，否则为群组特定黑名单
+                reason TEXT DEFAULT '',
+                added_by TEXT NOT NULL,  -- 添加者的user_id
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(user_id, group_id)  -- 防重复：同一用户在同一群（或全局）只能有一条记录
+            )
+        """)
+
+    def _create_indexes(self, cursor):
+        """创建数据库索引以优化查询性能
+        
+        索引策略：
+        - blacklist表的user_id索引：快速查找用户是否在黑名单
+        - blacklist表的group_id索引：快速获取特定群的黑名单
+        
+        这些索引显著提升黑名单检查和列表查询的性能
+        """
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_blacklist_user_id ON blacklist(user_id)
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_blacklist_group_id ON blacklist(group_id)
+        """)
 
     # ==================== 词库管理 ====================
     def add_keyword(self, keyword: str, reply: str) -> bool:

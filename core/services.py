@@ -307,37 +307,67 @@ class BlacklistService:
             tuple: (是否成功, 结果消息)
         """
         try:
-            # 获取黑名单列表
             blacklist = self.db.get_blacklist(group_id, limit=20)  # 限制显示20条
 
             if not blacklist:
-                scope_text = "全局黑名单" if group_id is None else "当前群组黑名单"
-                return False, f"{scope_text}为空"
+                return self._handle_empty_blacklist(group_id)
 
-            scope_text = (
-                "全局黑名单" if group_id is None else f"群组 {group_id} 黑名单"
-            )
-            result = f"🚫 {scope_text} (显示前20条):\n\n"
-
-            for i, (
-                _,
-                user_id,
-                bl_group_id,
-                reason,
-                added_by,
-                created_at,
-            ) in enumerate(blacklist, 1):
-                reason_text = f" - {reason}" if reason else ""
-                scope_indicator = " [全局]" if bl_group_id is None else ""
-                result += f"{i}. {user_id}{scope_indicator}{reason_text}\n"
-
-            result += f"\n总计：{len(blacklist)} 条记录"
-            result += "\n使用 /sunos bl del <user_id> 移除用户"
-            return True, result
+            return self._format_blacklist_result(blacklist, group_id)
 
         except Exception as e:
             logger.error(f"获取黑名单列表失败: {e}")
             return False, "获取黑名单列表失败，请稍后重试"
+
+    def _handle_empty_blacklist(self, group_id: str = None) -> Tuple[bool, str]:
+        """处理空黑名单情况
+        
+        Args:
+            group_id: 群组ID
+            
+        Returns:
+            tuple: (是否成功, 结果消息)
+        """
+        scope_text = "全局黑名单" if group_id is None else "当前群组黑名单"
+        return False, f"{scope_text}为空"
+
+    def _format_blacklist_result(self, blacklist: List, group_id: str = None) -> Tuple[bool, str]:
+        """格式化黑名单结果
+        
+        Args:
+            blacklist: 黑名单数据列表
+            group_id: 群组ID
+            
+        Returns:
+            tuple: (是否成功, 结果消息)
+        """
+        scope_text = "全局黑名单" if group_id is None else f"群组 {group_id} 黑名单"
+        result = f"🚫 {scope_text} (显示前20条):\n\n"
+
+        # 格式化每个黑名单条目
+        result += self._format_blacklist_entries(blacklist)
+
+        # 添加统计信息和使用说明
+        result += f"\n总计：{len(blacklist)} 条记录"
+        result += "\n使用 /sunos bl del <user_id> 移除用户"
+        
+        return True, result
+
+    def _format_blacklist_entries(self, blacklist: List) -> str:
+        """格式化黑名单条目
+        
+        Args:
+            blacklist: 黑名单数据列表
+            
+        Returns:
+            str: 格式化后的条目字符串
+        """
+        entries = []
+        for i, (_, user_id, bl_group_id, reason, added_by, created_at) in enumerate(blacklist, 1):
+            reason_text = f" - {reason}" if reason else ""
+            scope_indicator = " [全局]" if bl_group_id is None else ""
+            entries.append(f"{i}. {user_id}{scope_indicator}{reason_text}")
+        
+        return "\n".join(entries)
 
     def is_user_blacklisted(self, user_id: str, group_id: str = None) -> bool:
         """检查用户是否在黑名单中
