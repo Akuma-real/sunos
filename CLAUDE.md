@@ -21,11 +21,9 @@ ruff format .  # Format code with ruff tool
 
 **OneBot11 Integration Tests**:
 ```bash
-# Test OneBot11 adapter functionality
-python test_code_quality.py
-
-# Test adapter configuration (requires OneBot11 server)
-python -c "from core import create_onebot_adapter; print('OneBot11 ready')"
+# 在AstrBot环境中测试adapter配置
+# 需要在AstrBot插件加载后运行，非独立环境命令
+# python -c "from core import create_onebot_adapter; print('OneBot11 ready')"
 ```
 
 **Test Commands**:
@@ -39,10 +37,6 @@ python -c "from core import create_onebot_adapter; print('OneBot11 ready')"
 /sunos enable
 /sunos ck add test "Test reply"
 /sunos wc set "Welcome {user} to group {group}!"
-
-# Cache management
-/sunos cache stats
-/sunos cache clear
 ```
 
 ## Architecture v2.0
@@ -52,122 +46,117 @@ python -c "from core import create_onebot_adapter; print('OneBot11 ready')"
 **Layer Structure**:
 ```
 main.py (Star Plugin Class)
-    ↓ (Dependency Injection)
-controllers/ (Request Handling)
-    ↓ (Business Logic Delegation) 
-services/ (Business Logic)
+    ↓ (Service Integration)
+core/services.py (Business Logic)
     ↓ (Data Access)
-repositories/ (Data Access Layer)
+core/database.py (Data Access Layer)
     ↓ (Database Operations)
-models/ (Data Models)
+core/utils.py (Helper Functions)
+core/handlers.py (Event Processing)
+core/permissions.py (Authorization)
+core/platform.py (Platform Abstraction)
 ```
 
 **Component Responsibilities**:
-- **Models**: Data structures with validation and serialization
-- **Repositories**: Abstract data access with Repository pattern
-- **Services**: Business logic with caching integration
-- **Controllers**: Request handling with unified error management
-- **Decorators**: Cross-cutting concerns (permissions, validation, caching)
-- **Utils**: Helper functions (message building, template parsing, error handling)
+- **SunosDatabase**: Direct database operations with table management
+- **Services**: Business logic with database integration (KeywordService, WelcomeService, etc.)
+- **Handlers**: Event processing and auto-reply logic (GroupEventHandler, AutoReplyHandler)
+- **Permissions**: Authorization and access control decorators
+- **Platform**: Cross-platform adapter for different messaging systems
+- **Utils**: Helper functions (message building, validation, notification management)
 
 ### Dependency Injection Container
 
-**Service Initialization** (`main.py:39-77`):
+**Service Initialization** (`main.py:93-119`):
 ```python
-# Repository Layer
-self.keyword_repo = KeywordRepository()
-self.welcome_repo = WelcomeRepository()
-self.group_repo = GroupRepository()
+# 初始化核心组件
+self.db = SunosDatabase()
+self.platform_adapter = PlatformAdapter(context)
+self.notification_manager = NotificationManager(cooldown=30)
 
-# Service Layer with Cache Integration
-self.cache_service = CacheService()
-self.keyword_service = KeywordService(self.keyword_repo, self.cache_service)
+# 初始化服务层
+self.keyword_service = KeywordService(self.db)
+self.welcome_service = WelcomeService(self.db)
+self.blacklist_service = BlacklistService(self.db)
+self.group_service = GroupService(self.db)
 
-# Controller Layer with Service Dependencies
-self.keyword_controller = KeywordController(self.keyword_service)
+# 初始化事件处理器
+self.group_event_handler = GroupEventHandler(
+    self.blacklist_service, self.welcome_service,
+    self.platform_adapter, self.notification_manager
+)
+self.auto_reply_handler = AutoReplyHandler(
+    self.keyword_service, self.group_service
+)
 ```
 
 **Benefits**:
-- **Loose Coupling**: Components depend on abstractions, not concrete implementations
-- **Testability**: Easy to mock dependencies for unit testing
-- **Extensibility**: New features can be added without modifying existing code
-- **Maintainability**: Clear separation of concerns reduces complexity
+- **Service Integration**: Direct database access through service layer
+- **Event-Driven**: Specialized handlers for different event types
+- **Modular Design**: Clear separation between data, business logic, and presentation
+- **Maintainability**: Well-defined component boundaries reduce complexity
 
 ### Decorator System
 
 **Available Decorators**:
 ```python
-from .decorators import admin_required, group_only, validate_params, cached
+from .permissions import admin_required, group_only
 
 @admin_required                              # Permission checking
 @group_only                                  # Group chat validation  
-@validate_params(min_count=2)               # Parameter validation
-@cached(ttl=60)                             # Response caching
-async def handler(self, event, params):      # Method with decorators
+async def handler(self, event):              # Method with decorators
     # Handler logic with validation/permissions handled automatically
 ```
 
 **Cross-Cutting Concerns**:
 - **Permission Management**: Automatic admin/group validation
-- **Parameter Validation**: Type checking and count validation
-- **Caching**: LRU cache with TTL support and statistics
+- **Authorization**: Role-based access control for sensitive operations
 - **Error Handling**: Unified exception handling with user-friendly messages
 
 ### Service Layer Features
-
-**Caching Integration**:
-- **LRU Cache**: Least Recently Used eviction strategy
-- **TTL Support**: Time-based cache expiration
-- **Hit Rate Tracking**: Performance monitoring with statistics
-- **Cache Invalidation**: Automatic cache clearing on data updates
 
 **Business Logic Separation**:
 - **KeywordService**: Keyword CRUD with duplicate detection
 - **WelcomeService**: Template-based welcome message management
 - **GroupService**: Feature toggle with status tracking
-- **CacheService**: Centralized cache management
+- **BlacklistService**: User blacklist management with validation
 
-### Data Model System
+### Service Layer Architecture
 
-**Type-Safe Models**:
+**Business Service Classes**:
 ```python
-@dataclass
-class Keyword:
-    id: Optional[int] = None
-    keyword: str = ""
-    reply: str = ""
-    created_at: Optional[datetime] = None
+# Service classes handle business logic with database integration
+class KeywordService:
+    def __init__(self, db: SunosDatabase):
+        self.db = db
     
-    def validate(self) -> Tuple[bool, str]:
-        # Validation logic with detailed error messages
+    def add_keyword(self, keyword: str, reply: str) -> Tuple[bool, str]:
+        # Business logic with validation and database operations
 ```
 
-**Model Features**:
-- **Data Validation**: Business rule enforcement
-- **Serialization**: JSON conversion for API responses  
-- **Type Hints**: Full type safety with mypy compatibility
-- **Immutability**: Dataclass with controlled mutation
+**Service Features**:
+- **Database Integration**: Direct access to SunosDatabase for data operations
+- **Business Logic**: Validation, processing, and error handling
+- **Return Patterns**: Consistent (success: bool, message: str) return format
+- **Error Handling**: Comprehensive validation and user-friendly error messages
 
 ### Template System
 
-**Advanced Template Engine** (`utils/template_parser.py`):
+**Simple Placeholder Engine** (`core/utils.py:MessageBuilder`):
 ```python
-# Built-in Variables
-{date}        # Current date
-{time}        # Current time  
-{user_id}     # Message sender ID
-{group_id}    # Group chat ID
-{random:1:10} # Random number between 1-10
+# Supported Placeholders
+{user}   # Replaced with @user component
+{group}  # Replaced with group ID
 
-# Custom Context Variables
-parse_template("Welcome {user_name}!", {"user_name": "Alice"}, event)
+# Usage Example
+welcome_msg = "Welcome {user} to group {group}!"
+chain = MessageBuilder.build_welcome_chain(welcome_msg, user_id, group_id)
 ```
 
 **Template Features**:
-- **Variable Substitution**: Context-aware placeholder replacement
-- **Built-in Functions**: Date/time, random numbers, user info
-- **Format Modifiers**: `{text:upper}`, `{text:len:10}`, `{text:pad:5:0}`
-- **Validation**: Template syntax checking with error reporting
+- **Basic Substitution**: Simple placeholder replacement for user and group
+- **Component Integration**: Automatic @user component generation
+- **Message Chain Building**: Integration with AstrBot message component system
 
 ### AstrBot Core Architecture
 
@@ -327,17 +316,16 @@ async def handler(self, event: AstrMessageEvent):
 **Modern Message Chain Construction**:
 ```python
 import astrbot.api.message_components as Comp
-from .utils import parse_template
+from .utils import MessageBuilder
 
 # Template-based message building
-template = "Welcome {user} to {group}!"
-context = {"group": group_id}
-processed = parse_template(template, context, event)
+welcome_msg = "Welcome {user} to {group}!"
+chain = MessageBuilder.build_welcome_chain(welcome_msg, user_id, group_id)
 
-# Rich message chain
+# Rich message chain construction  
 chain = [
     Comp.At(qq=user_id),
-    Comp.Plain(processed)
+    Comp.Plain(" 欢迎加入群聊！")
 ]
 yield event.chain_result(chain)
 ```

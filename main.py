@@ -215,6 +215,12 @@ class SunosPlugin(Star):
         async for result in self._process_sunos_command(event):
             yield result
 
+    @filter.command_group("sunos")
+    async def sunos_dot_main(self, event: AstrMessageEvent):
+        """SunOS 群聊管理插件点命令 - .sunos 触发"""
+        async for result in self._process_sunos_command(event):
+            yield result
+
     # ==================== 词库管理命令 ====================
     
     async def _process_keyword_commands(self, event: AstrMessageEvent, command_args: list):
