@@ -300,7 +300,7 @@ class SunKeywordPlugin(Star):
     # ==================== 自动回复 ====================
     
     @filter.event_message_type(filter.EventMessageType.ALL, priority=1)
-    async def handle_auto_reply(self, event: AstrMessageEvent):
+    async def handle_auto_reply(self, event: AstrMessageEvent, context: Context = None, *args, **kwargs):
         """处理自动回复"""
         try:
             message_text = event.message_str.strip()
