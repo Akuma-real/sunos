@@ -1,0 +1,26 @@
+[
+  {
+    "keyword": "list",
+    "reply": "回复关键词获取帮助\n - 捐赠\n - 刷入教程\n - 下载链接\n - 更新日志\n - MistOS密码\n提示：SunOS若需使用GKI内核，请刷入群文件boot"
+  },
+  {
+    "keyword": "更新日志",
+    "reply": "https://blog.wzwzx.cn/archives/sunos-for-giulia#%E6%9B%B4%E6%96%B0%E6%97%A5%E5%BF%97"
+  },
+  {
+    "keyword": "下载链接",
+    "reply": "https://dl.wzwzx.cn"
+  },
+  {
+    "keyword": "刷入教程",
+    "reply": "https://blog.wzwzx.cn/archives/sunos-for-giulia#%E5%A6%82%E4%BD%95%E5%88%B7%E5%85%A5"
+  },
+  {
+    "keyword": "MistOS密码",
+    "reply": "2wzh087s2ve8xy9"
+  },
+  {
+    "keyword": "捐赠",
+    "reply": "捐赠榜单：\n https://blog.wzwzx.cn/donate\n 捐赠链接：\n 微信：\n https://ota.wzwzx.cn/wechat.jpg\n 支付宝：\n https://ota.wzwzx.cn/alipay.jpg\n Paypal：\n https://www.paypal.com/paypalme/huifanghf"
+  }
+]
